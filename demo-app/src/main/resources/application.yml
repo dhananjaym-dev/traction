@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: demo-app
+  # Overridable by env: SPRING_RABBITMQ_HOST, SPRING_DATA_REDIS_HOST (compose sets them).
+  rabbitmq:
+    host: localhost
+    port: 5672
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+traction:
+  control-plane:
+    enabled: true   # this service is also the control plane: admin API + dashboard at /traction
+
+# The vendor simulator (env ACME_BASE_URL; compose sets http://acme-vendor:9090).
+acme:
+  base-url: http://localhost:9090
+
+logging:
+  pattern:
+    # Every flight's log lines carry its correlation and flight ids (MDC set by the consumer).
+    level: "%5p [cid=%X{correlationId:--} flight=%X{flightId:--}]"
