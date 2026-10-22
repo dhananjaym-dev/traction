@@ -26,4 +26,16 @@ public record ScopeRef(String value) {
   public static ScopeRef raw(String value) {
     return new ScopeRef(value);
   }
+
+  /** The airport this scope belongs to (the whole value for an airport scope). */
+  public String airportId() {
+    int slash = value.indexOf('/');
+    return slash < 0 ? value : value.substring(0, slash);
+  }
+
+  /** The gate id for a gate scope; null for an airport scope. */
+  public String gateId() {
+    int slash = value.indexOf('/');
+    return slash < 0 ? null : value.substring(slash + 1);
+  }
 }

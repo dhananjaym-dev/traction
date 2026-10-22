@@ -3,11 +3,15 @@ package dev.traction.core.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.traction.core.api.AirportSpec;
 import dev.traction.core.api.FlightEventHook;
+import dev.traction.core.api.NotifyHook;
 import dev.traction.core.api.Tower;
 import dev.traction.core.clearance.ClearanceService;
 import dev.traction.core.consume.FlightConsumer;
 import dev.traction.core.consume.GroundDelayService;
 import dev.traction.core.consume.HoldingPatternService;
+import dev.traction.core.controlplane.ControlPlaneConfig;
+import dev.traction.core.hooks.LogNotifyHook;
+import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.registry.AirportDeclarations;
 import dev.traction.core.registry.AirportListenerFactory;
@@ -16,8 +20,11 @@ import dev.traction.core.registry.AmqpAirportDeclarations;
 import dev.traction.core.registry.ConsumerReconciler;
 import dev.traction.core.registry.ContainerFactory;
 import dev.traction.core.report.FlightReportEmitter;
+import dev.traction.core.status.Events;
+import dev.traction.core.status.EventsListener;
 import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.Topology;
+import java.nio.charset.StandardCharsets;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -27,13 +34,18 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
 /**
  * Wires the Traction data plane. Registered in
@@ -41,12 +53,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  *
  * <p>Wiring pattern for every module: one explicit {@code @Bean} method per bean here (no
  * component scanning, no stereotype annotations on the classes). Control-plane beans are added
- * the same way, grouped in a nested {@code @Configuration} gated by
- * {@code @ConditionalOnProperty("traction.control-plane.enabled")}.
+ * the same way, grouped in {@link ControlPlaneConfig} (imported here) gated by
+ * {@code traction.control-plane.enabled=true}.
  */
 @AutoConfiguration(after = {JacksonAutoConfiguration.class, RabbitAutoConfiguration.class,
     RedisAutoConfiguration.class})
 @EnableConfigurationProperties(TractionProperties.class)
+@Import(ControlPlaneConfig.class)
 public class TractionAutoConfiguration {
 
   @Bean
@@ -183,5 +196,43 @@ public class TractionAutoConfiguration {
   @Bean
   public GroundDelayService tractionGroundDelayService(StringRedisTemplate redis) {
     return new GroundDelayService(redis);
+  }
+
+  /**
+   * The default notify hook, registered beside any hooks the application adds (every hook gets
+   * every event). Opt out with {@code traction.notify.log.enabled=false}.
+   */
+  @Bean
+  @ConditionalOnProperty(prefix = "traction.notify.log", name = "enabled", havingValue = "true",
+      matchIfMissing = true)
+  public LogNotifyHook tractionLogNotifyHook() {
+    return new LogNotifyHook();
+  }
+
+  @Bean
+  public NotifyDispatcher tractionNotifyDispatcher(ObjectProvider<NotifyHook> hooks) {
+    return new NotifyDispatcher(hooks.orderedStream().toList());
+  }
+
+  @Bean
+  public EventsListener tractionEventsListener(AirportRegistry registry) {
+    return new EventsListener(registry);
+  }
+
+  /**
+   * Subscribes this process to {@code tr:events}, so a ground stop decided by any control plane
+   * pauses this process's consumers and a reopen resumes them. Fail-fast like registration: an
+   * unreachable Redis at boot fails startup; a later connection loss is retried by the container.
+   * Not an autowire candidate.
+   */
+  @Bean(defaultCandidate = false)
+  public RedisMessageListenerContainer tractionEventsContainer(RedisConnectionFactory connectionFactory,
+      EventsListener eventsListener) {
+    RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+    container.setConnectionFactory(connectionFactory);
+    container.addMessageListener(
+        (message, pattern) -> eventsListener.onEvent(new String(message.getBody(), StandardCharsets.UTF_8)),
+        new ChannelTopic(Events.CHANNEL));
+    return container;
   }
 }
