@@ -9,10 +9,14 @@ import dev.traction.demo.governed.AcmeClient.Contact;
 import dev.traction.demo.governed.AcmeClient.WelcomeEmail;
 import dev.traction.demo.governed.CrmAirportConfig;
 import dev.traction.demo.governed.MailAirportConfig;
+import dev.traction.demo.naive.NaiveTopology;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,11 +32,15 @@ public class SeedController {
 
     private final Tower tower;
     private final CharterDesk charterDesk;
+    private final RabbitTemplate naiveTemplate;
     private final AtomicLong sequence = new AtomicLong();
 
-    public SeedController(Tower tower, CharterDesk charterDesk) {
+    public SeedController(Tower tower, CharterDesk charterDesk, ConnectionFactory connectionFactory) {
         this.tower = tower;
         this.charterDesk = charterDesk;
+        // The naive baseline's own plain template: JSON to the default exchange, no Traction involved.
+        this.naiveTemplate = new RabbitTemplate(connectionFactory);
+        this.naiveTemplate.setMessageConverter(new Jackson2JsonMessageConverter());
     }
 
     /** {@code count} contact-sync flights; the first {@code bad} carry {@code bad=true}. */
@@ -71,6 +79,17 @@ public class SeedController {
                     new WelcomeEmail(id, id + "@example.com", false), new DispatchOptions(id, charterRef));
         }
         return json("charterRef", charterRef, "dispatched", count);
+    }
+
+    /** {@code count} contacts published straight to the naive baseline's queue, bypassing Traction. */
+    @PostMapping("/naiveContacts")
+    public Map<String, Object> naiveContacts(@RequestParam int count) {
+        requireCounts(count, 0);
+        for (int i = 0; i < count; i++) {
+            String id = "naive-contact-" + sequence.incrementAndGet();
+            naiveTemplate.convertAndSend(NaiveTopology.QUEUE, new Contact(id, id + "@example.com", false));
+        }
+        return json("dispatched", count);
     }
 
     /** A second run while one is open on the gate (PER_KEY admission). */
