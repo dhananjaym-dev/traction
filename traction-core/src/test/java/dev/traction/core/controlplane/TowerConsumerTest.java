@@ -5,6 +5,7 @@ import static dev.traction.core.controlplane.Reports.airportFault;
 import static dev.traction.core.controlplane.Reports.landed;
 import static dev.traction.core.controlplane.Reports.recordIncident;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -86,13 +87,19 @@ class TowerConsumerTest {
   }
 
   @Test
-  void aRulesFailureNeverFailsTheReport() {
+  void aFailedTransitionPropagatesSoTheReportIsRedeliveredButAMalformedOneIsAcked() {
+    // e.g. the status CAS script failing on a Redis outage: the AUTO-ack listener requeues it.
     doThrow(new IllegalStateException("redis down")).when(rules).evaluate(any());
 
-    tower.onReport(recordIncident("FLIGHT_FAULT", "contact-sync", "c-1"));
+    assertThrows(IllegalStateException.class, () -> tower.onReport(airportFault()));
+    verify(incidents, never()).record(any()); // recorded only once the rules succeed: no duplicate
+    assertTrue(notified.isEmpty());
 
+    // A report the rules cannot apply (e.g. an invalid gate id from a foreign producer) can never
+    // succeed on redelivery, so it is logged and acked instead.
+    doThrow(new IllegalArgumentException("bad gate id")).when(rules).evaluate(any());
+    tower.onReport(recordIncident("FLIGHT_FAULT", "contact-sync", "c-1"));
     verify(incidents).record(any());
-    assertEquals(1, notified.size());
   }
 
   @Test

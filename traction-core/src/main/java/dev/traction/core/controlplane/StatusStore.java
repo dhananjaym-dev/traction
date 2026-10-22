@@ -108,6 +108,14 @@ public class StatusStore {
     return previous != null;
   }
 
+  /**
+   * Re-broadcasts a stored status on {@code tr:events} without writing it (the status sweep).
+   * Redis failures propagate.
+   */
+  public void publish(ScopeRef scope, StatusSnapshot stored) {
+    redis.convertAndSend(Events.CHANNEL, Events.statusChanged(scope, stored.status(), stored.reason()));
+  }
+
   private void broadcast(ScopeRef scope, AirportStatus status, StopReason reason) {
     try {
       redis.convertAndSend(Events.CHANNEL, Events.statusChanged(scope, status, reason));

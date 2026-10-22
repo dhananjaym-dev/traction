@@ -24,8 +24,13 @@ import org.slf4j.MDC;
  *   <li>INCIDENT reports go to the {@link IncidentSummaryStore} (recent incidents);</li>
  *   <li>a FLIGHT_INCIDENT notification, under the rule below.</li>
  * </ol>
- * Each step is best effort: a failure is logged and the report is still acked, never requeued
- * into a loop. Streaks are ephemeral and self-heal; the summaries are a convenience view.
+ * A rules failure propagates, so the tower listener requeues the report (backoff, then
+ * {@code tr.dlq} after the delivery limit): an AIRPORT_FAULT whose ground stop could not be
+ * written is retried, never acked away. Streak reads already fail soft inside
+ * {@link StreakTracker}, so in practice this is the status write. A report the rules reject as
+ * malformed ({@link IllegalArgumentException}) is logged and acked. Steps 3 and 4 run only after
+ * the rules succeeded (so a redelivered report is recorded and notified once) and are best
+ * effort: a failure is logged and the report is still acked.
  *
  * <p><b>FLIGHT_INCIDENT rule.</b> One notification per flight the framework gave up on: a RECORD
  * row with outcome INCIDENT and disposition PARKED or TERMINAL. Never for INTERIM rows (holds and
@@ -62,9 +67,14 @@ public class TowerConsumer {
       log.debug("tower report {}", m);
       try {
         rules.evaluate(m);
-      } catch (RuntimeException e) {
-        log.warn("ground-stop rules failed for flight {}; skipped (streaks self-heal)", m.flightId(), e);
+      } catch (IllegalArgumentException malformed) {
+        // A report the rules can never apply (e.g. an invalid gate id): redelivery cannot help.
+        log.warn("ground-stop rules rejected flight {}; report acked: {}", m.flightId(),
+            malformed.getMessage());
       }
+      // Any other rules failure (the status CAS on a Redis outage) propagates: the listener
+      // requeues the report, so a ground stop is never silently lost. Everything below runs only
+      // once the rules succeeded, so a redelivered report is summarized and notified once.
       if (!"INCIDENT".equals(m.outcome())) {
         return;
       }

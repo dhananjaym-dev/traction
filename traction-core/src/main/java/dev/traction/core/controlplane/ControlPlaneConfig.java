@@ -1,6 +1,7 @@
 package dev.traction.core.controlplane;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.traction.core.config.TractionProperties;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.QueueNames;
@@ -16,7 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * The control plane: tower consumer, ground-stop rules, status writes, incident summaries and
- * the fleet projection. Active only with {@code traction.control-plane.enabled=true}, in exactly
+ * the fleet projection and the status sweep. Active only with {@code traction.control-plane.enabled=true}, in exactly
  * the processes that should decide ground stops (one or several: transitions are atomic and
  * notify once). Imported by {@code TractionAutoConfiguration}; one explicit {@code @Bean} per
  * bean, like the rest of the wiring. The data plane's pause/resume fan-out
@@ -62,6 +63,12 @@ public class ControlPlaneConfig {
   public AnnouncementProjector tractionAnnouncementProjector(StringRedisTemplate redis,
       @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper) {
     return new AnnouncementProjector(redis, tractionObjectMapper);
+  }
+
+  @Bean
+  public StatusSweep tractionStatusSweep(StatusStore statusStore, AnnouncementProjector fleet,
+      TractionProperties properties) {
+    return new StatusSweep(statusStore, fleet, properties.getControlPlane().getStatusSweepInterval());
   }
 
   @Bean
