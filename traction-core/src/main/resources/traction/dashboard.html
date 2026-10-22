@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traction</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f0f2f5; --line: #e1e4ea;
+    --text: #172033; --muted: #667085; --faint: #98a2b3;
+    --ok: #12805c; --ok-bg: #dcf5ea;
+    --warn: #a15c00; --warn-bg: #fdf0d3;
+    --bad: #b42318; --bad-bg: #fde4e1;
+    --off: #475467; --off-bg: #e6e9ef;
+    --info: #1d4ed8; --info-bg: #e0e9ff;
+    --landed: #2fae7a; --rejected: #e5604f; --skipped: #98a2b3; --parked: #f0a62b; --discarded: #6b5bd6;
+    --track: #e6e9ef;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --panel: #161b22; --panel-2: #1d232c; --line: #2a313c;
+      --text: #e6e9ef; --muted: #98a2b3; --faint: #667085;
+      --ok: #4cd6a0; --ok-bg: #12362a;
+      --warn: #f5b84b; --warn-bg: #3b2a0c;
+      --bad: #ff8a7d; --bad-bg: #411a16;
+      --off: #b4bcc9; --off-bg: #272e39;
+      --info: #8fb0ff; --info-bg: #17254a;
+      --landed: #34c58a; --rejected: #ef6f5e; --skipped: #7d8696; --parked: #f2b043; --discarded: #8c7ef0;
+      --track: #262d38;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 18px 28px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .dot.stale { background: var(--bad); }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 28px 48px; }
+  .banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); }
+  .banner.show { display: block; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .tile .n { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .tile.alert .n { color: var(--bad); }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 10px; font-weight: 600; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 10px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tr.airport td { background: var(--panel); font-weight: 600; }
+  tr.gate td { background: var(--panel); }
+  tr.gate td:first-child { padding-left: 40px; font-weight: 450; }
+  tr.gate td:first-child::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 10px; border-left: 2px solid var(--line); border-bottom: 2px solid var(--line); border-radius: 0 0 0 4px; transform: translateY(-3px); }
+  td.nw, tr.gate td:first-child { white-space: nowrap; }
+  .sub { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 650; letter-spacing: .04em; white-space: nowrap; }
+  .pill.OPEN, .pill.LANDED, .pill.COMPLETED { background: var(--ok-bg); color: var(--ok); }
+  .pill.GROUND_STOP, .pill.PARKED, .pill.ABORTED { background: var(--warn-bg); color: var(--warn); }
+  .pill.CLOSED, .pill.SKIPPED { background: var(--off-bg); color: var(--off); }
+  .pill.INCIDENT, .pill.TERMINAL { background: var(--bad-bg); color: var(--bad); }
+  .pill.RETRYING, .pill.charter-open { background: var(--info-bg); color: var(--info); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 9px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .chip b { font-weight: 650; }
+  .chip small { color: var(--muted); font-size: 11px; }
+  .chip.hot { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+  .chip.hot small { color: var(--warn); }
+  .chip.unknown b { color: var(--faint); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .airport-block h3 { margin: 0; padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .airport-block h3 .sub { margin-left: 6px; }
+  .section-title { padding: 10px 16px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .incident { display: grid; grid-template-columns: 62px 1fr auto; gap: 4px 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .incident:last-child { border-bottom: 0; }
+  .incident .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .incident .what { min-width: 0; }
+  .incident .what .ev { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .charter { padding: 10px 16px 12px; border-bottom: 1px solid var(--line); }
+  .charter:last-child { border-bottom: 0; }
+  .charter .top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .charter .top .name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .charter .top .pct { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--track); }
+  .bar i { display: block; height: 100%; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--c); }
+  .empty { padding: 16px; color: var(--faint); font-size: 13px; }
+  footer { text-align: center; color: var(--faint); font-size: 12px; padding: 8px 0 24px; }
+  @media (max-width: 720px) {
+    main { padding: 16px; } header { padding: 14px 16px; }
+    th:nth-child(4), td:nth-child(4) { display: none; }
+    .cols { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Traction <span>containment dashboard</span></h1>
+  <div class="live"><span class="dot" id="dot"></span><span id="updated">connecting&hellip;</span></div>
+</header>
+<main>
+  <div class="banner" id="banner"></div>
+  <div class="summary" id="summary"></div>
+
+  <h2>Fleet</h2>
+  <div class="card"><table>
+    <thead><tr><th>Airport / gate</th><th>Status</th><th>Queues</th><th>Slots</th><th>Detail</th></tr></thead>
+    <tbody id="fleet"></tbody>
+  </table></div>
+
+  <h2>Incidents and charters</h2>
+  <div class="cols" id="blocks"></div>
+</main>
+<footer>read-only &middot; refreshes every 3 seconds</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  var API = location.pathname.replace(/\/+$/, '') + '/api';
+  var POLL_MS = 3000;
+  var INCIDENTS_SHOWN = 6;
+
+  // Every server string goes through textContent; nothing is ever assigned to innerHTML.
+  function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        if (k === 'class') { el.className = attrs[k]; }
+        else if (k === 'text') { el.textContent = attrs[k]; }
+        else if (k === 'style') { el.setAttribute('style', attrs[k]); }
+        else { el.setAttribute(k, attrs[k]); }
+      });
+    }
+    (children || []).forEach(function (c) { if (c) { el.appendChild(c); } });
+    return el;
+  }
+  function clear(el) { while (el.firstChild) { el.removeChild(el.firstChild); } }
+  function safeClass(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, ''); }
+
+  function pill(value) {
+    return h('span', { 'class': 'pill ' + safeClass(value), text: value == null ? 'UNKNOWN' : String(value).replace('_', ' ') });
+  }
+
+  function ago(ms) {
+    if (ms == null) { return ''; }
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 60) { return s + 's ago'; }
+    if (s < 3600) { return Math.floor(s / 60) + 'm ago'; }
+    if (s < 86400) { return Math.floor(s / 3600) + 'h ago'; }
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  function depthChip(label, value, hotWhenPositive) {
+    var known = value != null;
+    var cls = 'chip' + (!known ? ' unknown' : (hotWhenPositive && value > 0 ? ' hot' : ''));
+    return h('span', { 'class': cls, title: known ? label + ': ' + value : label + ': unknown' },
+      [h('small', { text: label }), h('b', { text: known ? String(value) : '?' })]);
+  }
+
+  function detailText(x) {
+    var parts = [];
+    if (x.reason) { parts.push(x.reason); }
+    if (x.detail) { parts.push(x.detail); }
+    if (x.since != null && x.status !== 'OPEN') { parts.push(ago(x.since)); }
+    return parts.join(' · ');
+  }
+
+  function tile(label, value, alert) {
+    return h('div', { 'class': 'tile' + (alert ? ' alert' : '') },
+      [h('div', { 'class': 'n', text: String(value) }), h('div', { 'class': 'l', text: label })]);
+  }
+
+  function renderSummary(airports, charters) {
+    var stopped = 0, gatesStopped = 0, parked = 0, open = 0;
+    airports.forEach(function (a) {
+      if (a.status !== 'OPEN') { stopped++; }
+      a.gates.forEach(function (g) { if (g.status !== 'OPEN') { gatesStopped++; } });
+      parked += (a.depths && a.depths.parked) || 0;
+    });
+    charters.forEach(function (c) { if (c.status === 'OPEN') { open++; } });
+    var el = document.getElementById('summary');
+    clear(el);
+    el.appendChild(tile('Airports', airports.length, false));
+    el.appendChild(tile('Airports stopped', stopped, stopped > 0));
+    el.appendChild(tile('Gates stopped', gatesStopped, gatesStopped > 0));
+    el.appendChild(tile('Parked flights', parked, parked > 0));
+    el.appendChild(tile('Open charters', open, false));
+  }
+
+  function renderFleet(airports) {
+    var body = document.getElementById('fleet');
+    clear(body);
+    if (airports.length === 0) {
+      body.appendChild(h('tr', null, [h('td', { colspan: '5', 'class': 'empty', text: 'No airports announced yet.' })]));
+      return;
+    }
+    airports.forEach(function (a) {
+      var d = a.depths || {};
+      var slots = a.slots && a.slots.limit != null
+        ? a.slots.limit + ' / ' + a.slots.windowSeconds + 's' : '';
+      body.appendChild(h('tr', { 'class': 'airport' }, [
+        h('td', null, [
+          document.createTextNode(a.displayName || a.id),
+          a.displayName ? h('span', { 'class': 'sub mono', text: '  ' + a.id }) : null
+        ]),
+        h('td', null, [pill(a.status)]),
+        h('td', null, [h('div', { 'class': 'chips' }, [
+          depthChip('runway', d.runway, false),
+          depthChip('holding', d.holding, true),
+          depthChip('parked', d.parked, true)
+        ])]),
+        h('td', { 'class': 'sub nw', text: slots }),
+        h('td', { 'class': 'sub', text: detailText(a) })
+      ]));
+      a.gates.forEach(function (g) {
+        body.appendChild(h('tr', { 'class': 'gate' }, [
+          h('td', { 'class': 'mono', text: g.id }),
+          h('td', null, [pill(g.status)]),
+          h('td', null, []),
+          h('td', { 'class': 'sub nw', text: 'cost ' + g.slotCost }),
+          h('td', { 'class': 'sub', text: detailText(g) })
+        ]));
+      });
+    });
+  }
+
+  function incidentRow(i) {
+    var what = [h('span', { 'class': 'mono', text: (i.gateId || '-') + ' ' }),
+      i.category ? h('span', { 'class': 'pill INCIDENT', text: i.category }) : null];
+    var ev = [i.evidenceCode, i.evidenceExcerpt || i.reason].filter(Boolean).join(' · ');
+    return h('div', { 'class': 'incident' }, [
+      h('span', { 'class': 'when', text: ago(i.emittedAtEpochMillis) }),
+      h('span', { 'class': 'what' }, what.concat([ev ? h('span', { 'class': 'ev', title: ev, text: ev }) : null])),
+      i.disposition ? h('span', { 'class': 'pill ' + safeClass(i.disposition), text: i.disposition }) : null
+    ]);
+  }
+
+  var SEGMENTS = [
+    ['landed', 'landed', '--landed'], ['rejected', 'rejected', '--rejected'],
+    ['skipped', 'skipped', '--skipped'], ['parked', 'parked', '--parked'],
+    ['discarded', 'discarded', '--discarded']
+  ];
+
+  function charterRow(c) {
+    var accounted = 0;
+    SEGMENTS.forEach(function (s) { accounted += c[s[0]] || 0; });
+    var denom = Math.max(c.expected || 0, accounted, 1);
+    var bar = h('div', { 'class': 'bar', role: 'img', 'aria-label': accounted + ' of ' + c.expected + ' accounted' },
+      SEGMENTS.map(function (s) {
+        var w = ((c[s[0]] || 0) / denom) * 100;
+        return h('i', { style: 'width:' + w.toFixed(2) + '%;background:var(' + s[2] + ')', title: s[1] + ': ' + (c[s[0]] || 0) });
+      }));
+    var legend = h('div', { 'class': 'legend' }, SEGMENTS.map(function (s) {
+      return h('span', { style: '--c:var(' + s[2] + ')', text: s[1] + ' ' + (c[s[0]] || 0) });
+    }));
+    var status = c.status === 'OPEN' ? 'charter-open' : c.status;
+    var name = (c.gateId || '') + '/' + (c.charterId || c.charterRef);
+    return h('div', { 'class': 'charter' }, [
+      h('div', { 'class': 'top' }, [
+        h('span', { 'class': 'name mono', title: c.charterRef, text: name }),
+        h('span', { 'class': 'pill ' + safeClass(status), text: c.status }),
+        h('span', { 'class': 'pct', text: accounted + ' / ' + c.expected })
+      ]),
+      bar, legend
+    ]);
+  }
+
+  function renderBlocks(airports, incidentsBy, chartersBy) {
+    var el = document.getElementById('blocks');
+    clear(el);
+    airports.forEach(function (a) {
+      var incidents = (incidentsBy[a.id] || []).slice(0, INCIDENTS_SHOWN);
+      var charters = chartersBy[a.id] || [];
+      el.appendChild(h('div', { 'class': 'card airport-block' }, [
+        h('h3', null, [document.createTextNode(a.displayName || a.id),
+          h('span', { 'class': 'sub mono', text: a.displayName ? a.id : '' })]),
+        h('div', { 'class': 'section-title', text: 'Recent incidents' }),
+        incidents.length ? h('div', null, incidents.map(incidentRow)) : h('div', { 'class': 'empty', text: 'No incidents.' }),
+        h('div', { 'class': 'section-title', text: 'Charters' }),
+        charters.length ? h('div', null, charters.slice(0, 8).map(charterRow)) : h('div', { 'class': 'empty', text: 'No charters.' })
+      ]));
+    });
+  }
+
+  function getJson(path) {
+    return fetch(API + path, { headers: { 'Accept': 'application/json' }, cache: 'no-store' }).then(function (r) {
+      if (!r.ok) { throw new Error(path + ' -> HTTP ' + r.status); }
+      return r.json();
+    });
+  }
+
+  function refresh() {
+    return Promise.all([getJson('/airports'), getJson('/charters')]).then(function (res) {
+      var airports = res[0], charters = res[1];
+      var chartersBy = {};
+      charters.forEach(function (c) { (chartersBy[c.airportId] = chartersBy[c.airportId] || []).push(c); });
+      return Promise.all(airports.map(function (a) {
+        return getJson('/airports/' + encodeURIComponent(a.id) + '/incidents').catch(function () { return []; });
+      })).then(function (lists) {
+        var incidentsBy = {};
+        airports.forEach(function (a, n) { incidentsBy[a.id] = lists[n]; });
+        renderSummary(airports, charters);
+        renderFleet(airports);
+        renderBlocks(airports, incidentsBy, chartersBy);
+        document.getElementById('banner').className = 'banner';
+        document.getElementById('dot').className = 'dot';
+        document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+      });
+    }).catch(function (e) {
+      var banner = document.getElementById('banner');
+      banner.textContent = 'Cannot reach the admin API (' + e.message + '). Showing the last data; retrying.';
+      banner.className = 'banner show';
+      document.getElementById('dot').className = 'dot stale';
+    });
+  }
+
+  function loop() { refresh().then(function () { setTimeout(loop, POLL_MS); }); }
+  loop();
+}());
+</script>
+</body>
+</html>

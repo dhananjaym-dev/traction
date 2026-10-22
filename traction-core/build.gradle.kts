@@ -13,5 +13,7 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.mockito:mockito-junit-jupiter")
+    testImplementation("org.springframework:spring-test")
+    testImplementation("org.apache.tomcat.embed:tomcat-embed-core") // servlet API for MockMvc only
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

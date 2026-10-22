@@ -6,6 +6,8 @@ import dev.traction.core.charter.CharterQueryService;
 import dev.traction.core.charter.CharterSweep;
 import dev.traction.core.charter.DiscardTally;
 import dev.traction.core.charter.ReplayTally;
+import dev.traction.core.admin.AdminController;
+import dev.traction.core.admin.DashboardController;
 import dev.traction.core.config.TractionProperties;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.publish.ConfirmedPublisher;
@@ -132,6 +134,33 @@ public class ControlPlaneConfig {
       NotifyDispatcher notifyDispatcher, ObjectProvider<DiscardTally> discardTally) {
     return new ParkedDiscardService(tractionRabbitTemplate, tractionObjectMapper, lock, notifyDispatcher,
         discardTally);
+  }
+
+  @Bean
+  public QueueDepthProbe tractionQueueDepthProbe(RabbitAdmin rabbitAdmin) {
+    return new QueueDepthProbe(rabbitAdmin);
+  }
+
+  /** The REST admin API under {@code /traction/api}; the fleet comes from the Redis projection. */
+  @Bean
+  public AdminController tractionAdminController(AnnouncementProjector announcements,
+      StatusStore statusStore, TransitionService transitions, IncidentSummaryStore incidents,
+      CharterQueryService charterQueries, CharterBoard charterBoard, ParkedReplayService replay,
+      ParkedDiscardService discard, QueueDepthProbe depthProbe) {
+    return new AdminController(announcements, statusStore, transitions, incidents, charterQueries,
+        charterBoard, replay, discard, depthProbe);
+  }
+
+  /** Maps the admin controller's exceptions to HTTP statuses (scoped to that controller). */
+  @Bean
+  public AdminController.Errors tractionAdminErrors() {
+    return new AdminController.Errors();
+  }
+
+  /** The read-only dashboard page at {@code GET /traction}. */
+  @Bean
+  public DashboardController tractionDashboardController() {
+    return new DashboardController();
   }
 
   /**
