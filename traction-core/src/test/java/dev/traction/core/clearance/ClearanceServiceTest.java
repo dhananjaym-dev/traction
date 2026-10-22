@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -82,19 +83,48 @@ class ClearanceServiceTest {
     assertEquals("3000", args.getAllValues().get(1)[0]);
   }
 
+  private static final Map<String, String> CONFIG_120_PER_MIN_BURST_20 =
+      // capacity 20 slots = 20000 milli; refill 120 per 60s = 2000 milli-tokens/sec
+      Map.of("capacity_milli", "20000", "refill_per_sec_milli", "2000");
+
   @Test
-  void unconfiguredBucketIsConfiguredOnceThenRetried() {
-    scriptReturns(List.of(-1L, 0L), List.of(1L, 0L));
+  void firstAcquireWritesConfigOnlyEvenIfBucketAlreadyHasStaleConfig() {
+    // The service never reads the hash: a stale capacity left by an earlier deploy is
+    // overwritten unconditionally, and only the two config fields (never tokens) are written.
+    scriptReturns(List.of(1L, 0L));
     assertTrue(clearance.acquire("a", slots, 1).granted());
-    // capacity 20 slots = 20000 milli; refill 120 per 60s = 2000 milli-tokens/sec
-    verify(hashOps).putAll(eq("tr:slots:a"),
-        eq(Map.of("capacity_milli", "20000", "refill_per_sec_milli", "2000")));
+    verify(hashOps).putAll("tr:slots:a", CONFIG_120_PER_MIN_BURST_20);
   }
 
   @Test
-  void stillUnconfiguredAfterConfigureFailsClosed() {
-    scriptReturns(List.of(-1L, 0L), List.of(-1L, 0L));
+  void sameConfigIsNotRewrittenAndChangedConfigIs() {
+    scriptReturns(List.of(1L, 0L), List.of(1L, 0L), List.of(1L, 0L));
+    clearance.acquire("a", slots, 1);
+    clearance.acquire("a", new SlotsConfig(120, Duration.ofMinutes(1), 20), 1);
+    verify(hashOps, times(1)).putAll(eq("tr:slots:a"), any());
+
+    clearance.acquire("a", new SlotsConfig(60, Duration.ofMinutes(1), 10), 5);
+    verify(hashOps).putAll("tr:slots:a",
+        Map.of("capacity_milli", "10000", "refill_per_sec_milli", "1000"));
+    verify(hashOps, times(2)).putAll(eq("tr:slots:a"), any());
+  }
+
+  @Test
+  void reconcileFailurePropagatesAndIsRetriedOnNextAcquire() {
+    doThrow(new IllegalStateException("redis down")).doNothing().when(hashOps).putAll(any(), any());
     assertThrows(IllegalStateException.class, () -> clearance.acquire("a", slots, 1));
+    verify(redis, never()).execute(any(RedisScript.class), anyList(), any(Object[].class));
+
+    scriptReturns(List.of(1L, 0L));
+    assertTrue(clearance.acquire("a", slots, 1).granted());
+  }
+
+  @Test
+  void bucketVanishingMidFlightFailsClosedAndReconcilesNextTime() {
+    scriptReturns(List.of(-1L, 0L), List.of(1L, 0L));
+    assertThrows(IllegalStateException.class, () -> clearance.acquire("a", slots, 1));
+    assertTrue(clearance.acquire("a", slots, 1).granted());
+    verify(hashOps, times(2)).putAll("tr:slots:a", CONFIG_120_PER_MIN_BURST_20);
   }
 
   @Test
