@@ -10,14 +10,18 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import dev.traction.core.api.AirportSpec;
+import dev.traction.core.api.AirportStatus;
 import dev.traction.core.api.FlightReport;
 import dev.traction.core.config.TractionProperties;
+import dev.traction.core.status.ScopeRef;
+import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.Topology;
 import java.time.Duration;
 import java.util.List;
@@ -38,6 +42,7 @@ class AirportRegistryTest {
   private final ChannelAwareMessageListener listener = mock(ChannelAwareMessageListener.class);
   private final SimpleMessageListenerContainer containerA = mock(SimpleMessageListenerContainer.class);
   private final SimpleMessageListenerContainer containerB = mock(SimpleMessageListenerContainer.class);
+  private final StatusReader statusReader = mock(StatusReader.class);
   private final TractionProperties properties = new TractionProperties();
   private AirportRegistry registry;
 
@@ -52,7 +57,7 @@ class AirportRegistryTest {
   void setUp() {
     when(listeners.forAirport(any())).thenReturn(listener);
     when(containerFactory.create(any(), any())).thenReturn(containerA, containerB);
-    registry = new AirportRegistry(topology, containerFactory, declarations, listeners, properties, "demo-app");
+    registry = new AirportRegistry(topology, containerFactory, declarations, listeners, statusReader, properties, "demo-app");
   }
 
   @Test
@@ -152,7 +157,7 @@ class AirportRegistryTest {
 
   @Test
   void missingListenerFactoryFailsWithAClearMessage() {
-    AirportRegistry bare = new AirportRegistry(topology, containerFactory, declarations, null, properties, "demo-app");
+    AirportRegistry bare = new AirportRegistry(topology, containerFactory, declarations, null, statusReader, properties, "demo-app");
 
     IllegalStateException e = assertThrows(IllegalStateException.class, () -> bare.register(spec("acme")));
 
@@ -162,7 +167,7 @@ class AirportRegistryTest {
 
   @Test
   void noSpecsRegistersNothingAndNeedsNoListenerFactory() {
-    AirportRegistry bare = new AirportRegistry(topology, containerFactory, declarations, null, properties, "demo-app");
+    AirportRegistry bare = new AirportRegistry(topology, containerFactory, declarations, null, statusReader, properties, "demo-app");
     bare.registerAll(List.of());
     verifyNoInteractions(topology, declarations, containerFactory);
   }
@@ -201,5 +206,34 @@ class AirportRegistryTest {
 
     verify(containerA).stop();
     assertFalse(registry.isRegistered("acme"));
+  }
+
+  @Test
+  void requestPauseStopsARunningContainerOffTheCallingThread() {
+    registry.register(spec("acme"));
+    registry.start();
+    when(containerA.isRunning()).thenReturn(true);
+
+    registry.requestPause("acme");
+    registry.requestPause("unknown"); // no-op
+
+    verify(containerA, timeout(2_000)).stop();
+  }
+
+  @Test
+  void resumeRestartsAPausedContainerOnlyWhenRunningAndStatusAllowsConsumption() {
+    registry.register(spec("acme"));
+    when(statusReader.get(ScopeRef.airport("acme"))).thenReturn(AirportStatus.OPEN);
+    registry.resume("acme"); // lifecycle not started yet
+    verify(containerA, never()).start();
+
+    registry.start(); // first start
+    when(statusReader.get(ScopeRef.airport("acme"))).thenReturn(AirportStatus.GROUND_STOP);
+    registry.resume("acme"); // still grounded
+    verify(containerA, times(1)).start();
+
+    when(statusReader.get(ScopeRef.airport("acme"))).thenReturn(AirportStatus.OPEN);
+    registry.resume("acme"); // reopened
+    verify(containerA, times(2)).start();
   }
 }

@@ -2,6 +2,9 @@ package dev.traction.core.registry;
 
 import dev.traction.core.api.AirportSpec;
 import dev.traction.core.config.TractionProperties;
+import dev.traction.core.consume.AirportPauser;
+import dev.traction.core.status.ScopeRef;
+import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.Topology;
 import java.util.Collections;
 import java.util.HashSet;
@@ -11,6 +14,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.context.SmartLifecycle;
@@ -29,9 +35,14 @@ import org.springframework.context.SmartLifecycle;
  * duplicate airport id, and any gate whose slot cost exceeds the airport's burst (clearance could
  * never grant it). The gates are copied at registration because {@link AirportSpec#gates()} is a
  * live view of a mutable builder.
+ *
+ * <p>Pause and resume ({@link AirportPauser}): the flight consumer pauses its own airport on
+ * AIRPORT_FAULT or a non-consuming status, and the control plane's status events resume it on
+ * reopen. A pause is asynchronous on a dedicated thread because a container cannot stop itself
+ * from its own listener thread; {@link #shutdown()} (the bean's destroy method) ends that thread.
  */
 @Slf4j
-public class AirportRegistry implements SmartLifecycle {
+public class AirportRegistry implements SmartLifecycle, AirportPauser {
 
   private record Registered(Map<String, AirportSpec.Gate> gates,
       SimpleMessageListenerContainer container) { }
@@ -40,18 +51,25 @@ public class AirportRegistry implements SmartLifecycle {
   private final ContainerFactory containerFactory;
   private final AirportDeclarations declarations;
   private final AirportListenerFactory listenerFactory; // null when no consumer module is present
+  private final StatusReader statusReader;
   private final TractionProperties properties;
   private final String owningProcess;
   private final Map<String, Registered> airports = new ConcurrentHashMap<>();
+  private final ExecutorService pauseExecutor = Executors.newSingleThreadExecutor(r -> {
+    Thread t = new Thread(r, "traction-pause");
+    t.setDaemon(true);
+    return t;
+  });
   private volatile boolean running;
 
   public AirportRegistry(Topology topology, ContainerFactory containerFactory,
       AirportDeclarations declarations, AirportListenerFactory listenerFactory,
-      TractionProperties properties, String owningProcess) {
+      StatusReader statusReader, TractionProperties properties, String owningProcess) {
     this.topology = topology;
     this.containerFactory = containerFactory;
     this.declarations = declarations;
     this.listenerFactory = listenerFactory;
+    this.statusReader = statusReader;
     this.properties = properties;
     this.owningProcess = owningProcess;
   }
@@ -131,6 +149,56 @@ public class AirportRegistry implements SmartLifecycle {
     } else {
       log.info("airport {} dormant (traction.enabled=false)", id);
     }
+  }
+
+  /**
+   * Stops the airport's container asynchronously. A no-op when the airport is unknown or already
+   * stopped. Never throws: callers settle the delivery before asking for a pause.
+   */
+  @Override
+  public void requestPause(String airportId) {
+    Registered registered = airports.get(airportId);
+    if (registered == null || !registered.container().isRunning()) {
+      return;
+    }
+    try {
+      pauseExecutor.submit(() -> {
+        try {
+          if (registered.container().isRunning()) {
+            registered.container().stop();
+            log.info("airport {} paused (container stopped)", airportId);
+          }
+        } catch (RuntimeException e) {
+          log.error("airport {} pause failed", airportId, e);
+        }
+      });
+    } catch (RejectedExecutionException shuttingDown) {
+      log.warn("airport {} pause skipped: the registry is shutting down", airportId);
+    }
+  }
+
+  /**
+   * Restarts a paused airport's container. Only while the registry is running, consumption is
+   * enabled, and the airport's status allows consumption (events can arrive stale or out of
+   * order, so the stored status is re-checked). A no-op when unknown or already running.
+   */
+  public synchronized void resume(String airportId) {
+    Registered registered = airports.get(airportId);
+    if (registered == null || registered.container().isRunning()) {
+      return;
+    }
+    if (running && properties.isEnabled()
+        && statusReader.get(ScopeRef.airport(airportId)).allowsConsumption()) {
+      registered.container().start();
+      log.info("airport {} resumed", airportId);
+    } else {
+      log.info("airport {} resume skipped (registry stopped, disabled, or status not consuming)", airportId);
+    }
+  }
+
+  /** Ends the pause thread (the bean's destroy method). */
+  public void shutdown() {
+    pauseExecutor.shutdownNow();
   }
 
   public synchronized void deregister(String airportId) {

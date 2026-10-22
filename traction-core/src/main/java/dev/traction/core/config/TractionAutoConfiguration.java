@@ -2,9 +2,12 @@ package dev.traction.core.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.traction.core.api.AirportSpec;
+import dev.traction.core.api.FlightEventHook;
 import dev.traction.core.api.Tower;
 import dev.traction.core.clearance.ClearanceService;
+import dev.traction.core.consume.FlightConsumer;
 import dev.traction.core.consume.GroundDelayService;
+import dev.traction.core.consume.HoldingPatternService;
 import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.registry.AirportDeclarations;
 import dev.traction.core.registry.AirportListenerFactory;
@@ -12,6 +15,8 @@ import dev.traction.core.registry.AirportRegistry;
 import dev.traction.core.registry.AmqpAirportDeclarations;
 import dev.traction.core.registry.ConsumerReconciler;
 import dev.traction.core.registry.ContainerFactory;
+import dev.traction.core.report.FlightReportEmitter;
+import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.Topology;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -27,6 +32,7 @@ import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
@@ -65,16 +71,27 @@ public class TractionAutoConfiguration {
   }
 
   /**
+   * The wire-format mapper: a copy of the application's ObjectMapper (keeps its modules, so
+   * payload types serialize) that Traction owns. The template's converter wraps it, and the
+   * flight consumer reads and converts payloads with it, so both ends share one format. Not an
+   * autowire candidate, so the application's {@code ObjectMapper} injection points are unaffected.
+   */
+  @Bean(defaultCandidate = false)
+  public ObjectMapper tractionObjectMapper(ObjectMapper objectMapper) {
+    return objectMapper.copy();
+  }
+
+  /**
    * Traction's own template for flight dispatch, with a private JSON converter. The converter is
    * deliberately not a bean: a {@code MessageConverter} bean would be adopted by the application's
    * own RabbitTemplate and listeners. Not an autowire candidate, so the application's
-   * {@code RabbitTemplate} injection points are unaffected. The copy of the application's
-   * ObjectMapper keeps its modules (so payload types serialize) without sharing mutable state.
+   * {@code RabbitTemplate} injection points are unaffected.
    */
   @Bean(defaultCandidate = false)
-  public RabbitTemplate tractionRabbitTemplate(ConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+  public RabbitTemplate tractionRabbitTemplate(ConnectionFactory connectionFactory,
+      @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper) {
     RabbitTemplate template = new RabbitTemplate(connectionFactory);
-    template.setMessageConverter(new Jackson2JsonMessageConverter(objectMapper.copy()));
+    template.setMessageConverter(new Jackson2JsonMessageConverter(tractionObjectMapper));
     return template;
   }
 
@@ -102,13 +119,48 @@ public class TractionAutoConfiguration {
    * so a producer-only application with no airports still starts; the registry fails with a clear
    * message as soon as an airport needs it.
    */
-  @Bean
+  @Bean(destroyMethod = "shutdown")
   public AirportRegistry tractionAirportRegistry(Topology topology, ContainerFactory containerFactory,
       AirportDeclarations declarations, ObjectProvider<AirportListenerFactory> listenerFactory,
-      TractionProperties properties, Environment environment) {
+      StatusReader statusReader, TractionProperties properties, Environment environment) {
     return new AirportRegistry(topology, containerFactory, declarations,
-        listenerFactory.getIfAvailable(), properties,
+        listenerFactory.getIfAvailable(), statusReader, properties,
         environment.getProperty("spring.application.name", "application"));
+  }
+
+  /**
+   * One {@link FlightConsumer} per airport. The registry is the consumer's pauser but also builds
+   * the consumers through this factory, so it is looked up lazily at pause time (no bean cycle).
+   * Payload types resolve with the application's class loader.
+   */
+  @Bean
+  public AirportListenerFactory tractionAirportListenerFactory(StatusReader statusReader,
+      FlightReportEmitter reportEmitter,
+      @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionTemplate,
+      ConfirmedPublisher confirmedPublisher, ObjectProvider<AirportRegistry> registry,
+      @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper,
+      ResourceLoader resourceLoader, ClearanceService clearance, GroundDelayService groundDelay,
+      HoldingPatternService holding) {
+    ClassLoader classLoader = resourceLoader.getClassLoader();
+    return spec -> new FlightConsumer(spec, statusReader, reportEmitter, tractionTemplate,
+        confirmedPublisher, airportId -> registry.getObject().requestPause(airportId),
+        tractionObjectMapper, classLoader, clearance, groundDelay, holding);
+  }
+
+  @Bean
+  public StatusReader tractionStatusReader(StringRedisTemplate redis) {
+    return new StatusReader(redis);
+  }
+
+  @Bean
+  public FlightReportEmitter tractionFlightReportEmitter(ConfirmedPublisher confirmedPublisher,
+      ObjectProvider<FlightEventHook> hooks) {
+    return new FlightReportEmitter(confirmedPublisher, hooks.orderedStream().toList());
+  }
+
+  @Bean
+  public HoldingPatternService tractionHoldingPatternService(ConfirmedPublisher confirmedPublisher) {
+    return new HoldingPatternService(confirmedPublisher);
   }
 
   @Bean
