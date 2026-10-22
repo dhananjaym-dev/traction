@@ -15,8 +15,8 @@ import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.QueueNames;
 import dev.traction.core.topology.Topology;
 import org.springframework.amqp.core.AcknowledgeMode;
+import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.ObjectProvider;
@@ -101,7 +101,7 @@ public class ControlPlaneConfig {
 
   @Bean
   public CharterSweep tractionCharterSweep(CharterBoard charterBoard, StatusReader statusReader,
-      RabbitAdmin rabbitAdmin, TractionProperties properties) {
+      AmqpAdmin rabbitAdmin, TractionProperties properties) {
     return new CharterSweep(charterBoard, statusReader, rabbitAdmin,
         properties.getControlPlane().getCharterSweepInterval(),
         properties.getControlPlane().getCharterStaleAfter());
@@ -137,7 +137,7 @@ public class ControlPlaneConfig {
   }
 
   @Bean
-  public QueueDepthProbe tractionQueueDepthProbe(RabbitAdmin rabbitAdmin) {
+  public QueueDepthProbe tractionQueueDepthProbe(AmqpAdmin rabbitAdmin) {
     return new QueueDepthProbe(rabbitAdmin);
   }
 

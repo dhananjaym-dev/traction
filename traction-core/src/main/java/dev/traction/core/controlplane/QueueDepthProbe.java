@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 
 /**
@@ -19,10 +20,10 @@ public class QueueDepthProbe {
 
   private record CachedDepth(Optional<Long> value, long atMillis) { }
 
-  private final RabbitAdmin rabbitAdmin;
+  private final AmqpAdmin rabbitAdmin;
   private final Map<String, CachedDepth> cache = new ConcurrentHashMap<>();
 
-  public QueueDepthProbe(RabbitAdmin rabbitAdmin) {
+  public QueueDepthProbe(AmqpAdmin rabbitAdmin) {
     this.rabbitAdmin = rabbitAdmin;
   }
 

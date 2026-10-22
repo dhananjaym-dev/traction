@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.core.AmqpAdmin;
 
 /**
  * Declares the per-airport queue set. Declaration is idempotent. Dead-lettering uses the default
@@ -19,9 +19,9 @@ import org.springframework.amqp.rabbit.core.RabbitAdmin;
 @Slf4j
 public class Topology {
 
-  private final RabbitAdmin rabbitAdmin;
+  private final AmqpAdmin rabbitAdmin;
 
-  public Topology(RabbitAdmin rabbitAdmin) {
+  public Topology(AmqpAdmin rabbitAdmin) {
     this.rabbitAdmin = rabbitAdmin;
   }
 

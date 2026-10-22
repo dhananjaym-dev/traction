@@ -29,9 +29,9 @@ import dev.traction.core.status.EventsListener;
 import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.Topology;
 import java.nio.charset.StandardCharsets;
+import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -67,7 +67,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 public class TractionAutoConfiguration {
 
   @Bean
-  public Topology tractionTopology(RabbitAdmin rabbitAdmin) {
+  public Topology tractionTopology(AmqpAdmin rabbitAdmin) {
     return new Topology(rabbitAdmin);
   }
 
