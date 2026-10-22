@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -62,6 +63,10 @@ class AirportRegistryTest {
     verify(topology).declare("globex");
     verify(containerFactory).create(argThat(s -> s.airportId().equals("acme")), any());
     verify(containerFactory).create(argThat(s -> s.airportId().equals("globex")), any());
+    // containers are built at registration but only start with the lifecycle
+    verify(containerA, never()).start();
+    verify(containerB, never()).start();
+    registry.start();
     verify(containerA).start();
     verify(containerB).start();
 
@@ -94,6 +99,7 @@ class AirportRegistryTest {
     properties.setEnabled(false);
 
     registry.register(spec("acme"));
+    registry.start();
 
     verify(topology).declare("acme");
     verify(declarations).announce(any());
@@ -159,6 +165,32 @@ class AirportRegistryTest {
     AirportRegistry bare = new AirportRegistry(topology, containerFactory, declarations, null, properties, "demo-app");
     bare.registerAll(List.of());
     verifyNoInteractions(topology, declarations, containerFactory);
+  }
+
+  @Test
+  void stopStopsEveryContainerEvenWhenOneFailsToStop() {
+    registry.registerAll(List.of(spec("acme"), spec("globex")));
+    registry.start();
+    assertTrue(registry.isRunning());
+    doThrow(new IllegalStateException("boom")).when(containerA).stop();
+
+    registry.stop();
+
+    verify(containerA).stop();
+    verify(containerB).stop();
+    assertFalse(registry.isRunning());
+  }
+
+  @Test
+  void airportRegisteredAfterStartIsStartedImmediately() {
+    registry.start();
+    registry.register(spec("acme"));
+    verify(containerA).start();
+  }
+
+  @Test
+  void registryStartsLastAndStopsFirst() {
+    assertEquals(Integer.MAX_VALUE, registry.getPhase());
   }
 
   @Test

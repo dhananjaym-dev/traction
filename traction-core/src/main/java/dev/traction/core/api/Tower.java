@@ -13,7 +13,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * startup registration has run. An unknown airport or gate fails immediately with an
  * {@link IllegalArgumentException} and nothing is queued.
  *
- * <p>Publishing is a plain best-effort send on the default exchange (routing key = queue name),
+ * <p>Publishing uses Traction's own RabbitTemplate (private JSON converter), never the application's.
+ * It is a plain best-effort send on the default exchange (routing key = queue name),
  * so it is safe to call from inside the caller's own transaction boundaries.
  */
 @Slf4j

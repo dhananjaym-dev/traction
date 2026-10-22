@@ -18,12 +18,10 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
-import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -44,16 +42,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
     RedisAutoConfiguration.class})
 @EnableConfigurationProperties(TractionProperties.class)
 public class TractionAutoConfiguration {
-
-  /**
-   * Flights, announcements and reports travel as JSON. Applied to the application's RabbitTemplate
-   * and listener containers by Spring Boot; backs off when the application defines its own.
-   */
-  @Bean
-  @ConditionalOnMissingBean(MessageConverter.class)
-  public MessageConverter tractionMessageConverter(ObjectMapper objectMapper) {
-    return new Jackson2JsonMessageConverter(objectMapper);
-  }
 
   @Bean
   public Topology tractionTopology(RabbitAdmin rabbitAdmin) {
@@ -76,12 +64,26 @@ public class TractionAutoConfiguration {
     return confirmed;
   }
 
+  /**
+   * Traction's own template for flight dispatch, with a private JSON converter. The converter is
+   * deliberately not a bean: a {@code MessageConverter} bean would be adopted by the application's
+   * own RabbitTemplate and listeners. Not an autowire candidate, so the application's
+   * {@code RabbitTemplate} injection points are unaffected. The copy of the application's
+   * ObjectMapper keeps its modules (so payload types serialize) without sharing mutable state.
+   */
+  @Bean(defaultCandidate = false)
+  public RabbitTemplate tractionRabbitTemplate(ConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+    RabbitTemplate template = new RabbitTemplate(connectionFactory);
+    template.setMessageConverter(new Jackson2JsonMessageConverter(objectMapper.copy()));
+    return template;
+  }
+
   @Bean
   public ConfirmedPublisher tractionConfirmedPublisher(
       @Qualifier("tractionConfirmedConnectionFactory") CachingConnectionFactory confirmedConnectionFactory,
-      RabbitTemplate mainTemplate) {
+      @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionTemplate) {
     RabbitTemplate template = new RabbitTemplate(confirmedConnectionFactory);
-    template.setMessageConverter(mainTemplate.getMessageConverter());
+    template.setMessageConverter(tractionTemplate.getMessageConverter());
     return new ConfirmedPublisher(template);
   }
 
@@ -116,8 +118,9 @@ public class TractionAutoConfiguration {
   }
 
   @Bean
-  public Tower tractionTower(AirportRegistry registry, RabbitTemplate rabbitTemplate) {
-    return new Tower(registry, rabbitTemplate);
+  public Tower tractionTower(AirportRegistry registry,
+      @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionTemplate) {
+    return new Tower(registry, tractionTemplate);
   }
 
   @Bean

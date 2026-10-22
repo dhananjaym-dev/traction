@@ -13,11 +13,17 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+import org.springframework.context.SmartLifecycle;
 
 /**
  * Holds the registered airports and owns their container lifecycle. Registration validates the
- * spec, declares its queues, announces it on the tower queue and starts one container. Airports
+ * spec, declares its queues, announces it on the tower queue and builds one container. Airports
  * are static: each id registers once. Deregistration stops the container and keeps the queues.
+ *
+ * <p>Containers are started and stopped through {@link SmartLifecycle}, so they start only once
+ * the whole context has refreshed (a failed refresh never leaves a consumer running) and stop
+ * first on shutdown, while the connection factory is still open and in-flight deliveries can be
+ * settled. The phase is the latest possible for start and so the earliest for stop.
  *
  * <p>Validation rejects what would otherwise crash a consumer later: an incomplete spec, a
  * duplicate airport id, and any gate whose slot cost exceeds the airport's burst (clearance could
@@ -25,7 +31,7 @@ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
  * live view of a mutable builder.
  */
 @Slf4j
-public class AirportRegistry {
+public class AirportRegistry implements SmartLifecycle {
 
   private record Registered(Map<String, AirportSpec.Gate> gates,
       SimpleMessageListenerContainer container) { }
@@ -37,6 +43,7 @@ public class AirportRegistry {
   private final TractionProperties properties;
   private final String owningProcess;
   private final Map<String, Registered> airports = new ConcurrentHashMap<>();
+  private volatile boolean running;
 
   public AirportRegistry(Topology topology, ContainerFactory containerFactory,
       AirportDeclarations declarations, AirportListenerFactory listenerFactory,
@@ -81,11 +88,48 @@ public class AirportRegistry {
     SimpleMessageListenerContainer container =
         containerFactory.create(spec, listenerFactory.forAirport(spec));
     airports.put(id, new Registered(gates, container));
+    log.info("airport {} registered", id);
+    if (running) {
+      startContainer(id, container); // registered after the lifecycle already started
+    }
+  }
+
+  /** Starts every container (unless {@code traction.enabled=false}); called once the context is ready. */
+  @Override
+  public synchronized void start() {
+    running = true;
+    airports.forEach((id, registered) -> startContainer(id, registered.container()));
+  }
+
+  /** Stops every container; one failing stop never prevents the rest from stopping. */
+  @Override
+  public synchronized void stop() {
+    running = false;
+    airports.forEach((id, registered) -> {
+      try {
+        registered.container().stop();
+      } catch (RuntimeException e) {
+        log.warn("airport {} container failed to stop cleanly", id, e);
+      }
+    });
+  }
+
+  @Override
+  public boolean isRunning() {
+    return running;
+  }
+
+  @Override
+  public int getPhase() {
+    return Integer.MAX_VALUE;
+  }
+
+  private void startContainer(String id, SimpleMessageListenerContainer container) {
     if (properties.isEnabled()) {
       container.start();
-      log.info("airport {} registered and consuming", id);
+      log.info("airport {} consuming", id);
     } else {
-      log.info("airport {} registered dormant (traction.enabled=false)", id);
+      log.info("airport {} dormant (traction.enabled=false)", id);
     }
   }
 
