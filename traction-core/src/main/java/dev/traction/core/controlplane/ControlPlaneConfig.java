@@ -1,14 +1,18 @@
 package dev.traction.core.controlplane;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.traction.core.charter.DiscardTally;
 import dev.traction.core.config.TractionProperties;
 import dev.traction.core.hooks.NotifyDispatcher;
+import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.status.StatusReader;
 import dev.traction.core.topology.QueueNames;
 import dev.traction.core.topology.Topology;
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * The control plane: tower consumer, ground-stop rules, status writes, incident summaries and
- * the fleet projection and the status sweep. Active only with {@code traction.control-plane.enabled=true}, in exactly
+ * the fleet projection, the status sweep and the parked replay / discard operations. Active only with {@code traction.control-plane.enabled=true}, in exactly
  * the processes that should decide ground stops (one or several: transitions are atomic and
  * notify once). Imported by {@code TractionAutoConfiguration}; one explicit {@code @Bean} per
  * bean, like the rest of the wiring. The data plane's pause/resume fan-out
@@ -76,6 +80,32 @@ public class ControlPlaneConfig {
       StatusReader statusReader, NotifyDispatcher notifyDispatcher,
       AnnouncementProjector announcements) {
     return new TowerConsumer(rules, incidents, statusReader, notifyDispatcher, announcements);
+  }
+
+  @Bean
+  public ParkedOpLock tractionParkedOpLock(StringRedisTemplate redis) {
+    return new ParkedOpLock(redis);
+  }
+
+  /** Moves parked flights back to the runway through Traction's private template and mapper. */
+  @Bean
+  public ParkedReplayService tractionParkedReplayService(
+      @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionRabbitTemplate,
+      ConfirmedPublisher confirmedPublisher,
+      @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper, ParkedOpLock lock,
+      NotifyDispatcher notifyDispatcher) {
+    return new ParkedReplayService(tractionRabbitTemplate, confirmedPublisher, tractionObjectMapper, lock,
+        notifyDispatcher);
+  }
+
+  /** The {@link DiscardTally} (the charter board, when present) is optional. */
+  @Bean
+  public ParkedDiscardService tractionParkedDiscardService(
+      @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionRabbitTemplate,
+      @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper, ParkedOpLock lock,
+      NotifyDispatcher notifyDispatcher, ObjectProvider<DiscardTally> discardTally) {
+    return new ParkedDiscardService(tractionRabbitTemplate, tractionObjectMapper, lock, notifyDispatcher,
+        discardTally);
   }
 
   /**
