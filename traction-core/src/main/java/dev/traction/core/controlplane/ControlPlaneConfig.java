@@ -1,7 +1,11 @@
 package dev.traction.core.controlplane;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.traction.core.charter.CharterBoard;
+import dev.traction.core.charter.CharterQueryService;
+import dev.traction.core.charter.CharterSweep;
 import dev.traction.core.charter.DiscardTally;
+import dev.traction.core.charter.ReplayTally;
 import dev.traction.core.config.TractionProperties;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.publish.ConfirmedPublisher;
@@ -10,6 +14,7 @@ import dev.traction.core.topology.QueueNames;
 import dev.traction.core.topology.Topology;
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.ObjectProvider;
@@ -21,7 +26,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * The control plane: tower consumer, ground-stop rules, status writes, incident summaries and
- * the fleet projection, the status sweep and the parked replay / discard operations. Active only with {@code traction.control-plane.enabled=true}, in exactly
+ * the fleet projection, the status sweep, the parked replay / discard operations, and the
+ * charter side (counting through the tower consumer, the charter sweep and charter queries; the
+ * {@link CharterBoard} itself is in the main configuration because the data plane reads its
+ * abort marker). Active only with {@code traction.control-plane.enabled=true}, in exactly
  * the processes that should decide ground stops (one or several: transitions are atomic and
  * notify once). Imported by {@code TractionAutoConfiguration}; one explicit {@code @Bean} per
  * bean, like the rest of the wiring. The data plane's pause/resume fan-out
@@ -78,8 +86,23 @@ public class ControlPlaneConfig {
   @Bean
   public TowerConsumer tractionTowerConsumer(GroundStopRules rules, IncidentSummaryStore incidents,
       StatusReader statusReader, NotifyDispatcher notifyDispatcher,
-      AnnouncementProjector announcements) {
-    return new TowerConsumer(rules, incidents, statusReader, notifyDispatcher, announcements);
+      AnnouncementProjector announcements, CharterBoard charterBoard) {
+    return new TowerConsumer(rules, incidents, statusReader, notifyDispatcher, announcements,
+        charterBoard);
+  }
+
+  @Bean
+  public CharterQueryService tractionCharterQueryService(StringRedisTemplate redis,
+      CharterBoard charterBoard) {
+    return new CharterQueryService(redis, charterBoard);
+  }
+
+  @Bean
+  public CharterSweep tractionCharterSweep(CharterBoard charterBoard, StatusReader statusReader,
+      RabbitAdmin rabbitAdmin, TractionProperties properties) {
+    return new CharterSweep(charterBoard, statusReader, rabbitAdmin,
+        properties.getControlPlane().getCharterSweepInterval(),
+        properties.getControlPlane().getCharterStaleAfter());
   }
 
   @Bean
@@ -87,15 +110,18 @@ public class ControlPlaneConfig {
     return new ParkedOpLock(redis);
   }
 
-  /** Moves parked flights back to the runway through Traction's private template and mapper. */
+  /**
+   * Moves parked flights back to the runway through Traction's private template and mapper. The
+   * {@link ReplayTally} (the charter board) is optional.
+   */
   @Bean
   public ParkedReplayService tractionParkedReplayService(
       @Qualifier("tractionRabbitTemplate") RabbitTemplate tractionRabbitTemplate,
       ConfirmedPublisher confirmedPublisher,
       @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper, ParkedOpLock lock,
-      NotifyDispatcher notifyDispatcher) {
+      NotifyDispatcher notifyDispatcher, ObjectProvider<ReplayTally> replayTally) {
     return new ParkedReplayService(tractionRabbitTemplate, confirmedPublisher, tractionObjectMapper, lock,
-        notifyDispatcher);
+        notifyDispatcher, replayTally);
   }
 
   /** The {@link DiscardTally} (the charter board, when present) is optional. */

@@ -1,6 +1,7 @@
 package dev.traction.core.registry;
 
 import dev.traction.core.api.AirportSpec;
+import dev.traction.core.api.CharterConcurrency;
 import dev.traction.core.config.TractionProperties;
 import dev.traction.core.consume.AirportPauser;
 import dev.traction.core.status.ScopeRef;
@@ -34,7 +35,7 @@ import org.springframework.context.SmartLifecycle;
  * <p>Validation rejects what would otherwise crash a consumer later: an incomplete spec, a
  * duplicate airport id, and any gate whose slot cost exceeds the airport's burst (clearance could
  * never grant it). The gates are copied at registration because {@link AirportSpec#gates()} is a
- * live view of a mutable builder.
+ * live view of a mutable builder; the charter admission policy is captured with them.
  *
  * <p>Pause and resume ({@link AirportPauser}): the flight consumer pauses its own airport on
  * AIRPORT_FAULT or a non-consuming status, and the control plane's status events resume it on
@@ -45,7 +46,7 @@ import org.springframework.context.SmartLifecycle;
 public class AirportRegistry implements SmartLifecycle, AirportPauser {
 
   private record Registered(Map<String, AirportSpec.Gate> gates,
-      SimpleMessageListenerContainer container) { }
+      CharterConcurrency charterConcurrency, SimpleMessageListenerContainer container) { }
 
   private final Topology topology;
   private final ContainerFactory containerFactory;
@@ -105,7 +106,7 @@ public class AirportRegistry implements SmartLifecycle, AirportPauser {
     declarations.announce(AirportAnnouncement.from(spec, owningProcess));
     SimpleMessageListenerContainer container =
         containerFactory.create(spec, listenerFactory.forAirport(spec));
-    airports.put(id, new Registered(gates, container));
+    airports.put(id, new Registered(gates, spec.charterConcurrency(), container));
     log.info("airport {} registered", id);
     if (running) {
       startContainer(id, container); // registered after the lifecycle already started
@@ -225,6 +226,11 @@ public class AirportRegistry implements SmartLifecycle, AirportPauser {
   /** The gates the airport had when it registered; empty when the airport is not registered. */
   public Optional<Map<String, AirportSpec.Gate>> gatesOf(String airportId) {
     return Optional.ofNullable(airports.get(airportId)).map(Registered::gates);
+  }
+
+  /** The airport's charter admission policy; empty when the airport is not registered. */
+  public Optional<CharterConcurrency> charterConcurrencyOf(String airportId) {
+    return Optional.ofNullable(airports.get(airportId)).map(Registered::charterConcurrency);
   }
 
   private static Map<String, AirportSpec.Gate> checkRegistrable(AirportSpec spec) {

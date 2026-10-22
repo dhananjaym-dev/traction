@@ -33,6 +33,12 @@ public class TractionProperties {
 
     /** How often the control plane re-broadcasts every declared scope's stored status. */
     private Duration statusSweepInterval = Duration.ofSeconds(60);
+
+    /** How often the control plane sweeps the open charters (see {@code CharterSweep}). */
+    private Duration charterSweepInterval = Duration.ofHours(1);
+
+    /** An open charter with no progress for this long, on a drained gate, is force-completed. */
+    private Duration charterStaleAfter = Duration.ofHours(24);
   }
 
   @Getter

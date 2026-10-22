@@ -41,6 +41,9 @@ public record FlightReportMessage(
   /** Framework-reserved SKIPPED reason: the flight's gate was ground-stopped, so it parked. */
   public static final String REASON_GATE_GROUNDED = "GATE_GROUNDED";
 
+  /** Framework-reserved SKIPPED reason: the flight's charter was aborted (the skip window). */
+  public static final String REASON_CHARTER_ABORTED = "CHARTER_ABORTED";
+
   public static final int EVIDENCE_MAX_CODE_LENGTH = 64;
   public static final int EVIDENCE_MAX_MESSAGE_KEY_LENGTH = 128;
   public static final int EVIDENCE_MAX_EXCERPT_LENGTH = 1000;

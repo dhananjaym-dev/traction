@@ -1,6 +1,7 @@
 package dev.traction.core.controlplane;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.traction.core.charter.CharterEventMessage;
 import dev.traction.core.registry.AirportAnnouncement;
 import dev.traction.core.report.FlightReportMessage;
 import dev.traction.core.topology.QueueNames;
@@ -43,11 +44,12 @@ public class TowerMessageListener implements MessageListener {
 
   /**
    * The tower's reader: the Traction wire format (the publisher's mapper, type id in the
-   * {@code __TypeId__} header) restricted to the tower message types' packages.
+   * {@code __TypeId__} header) restricted to the packages of the three tower message types.
    */
   public static MessageConverter converter(ObjectMapper tractionObjectMapper) {
     return new Jackson2JsonMessageConverter(tractionObjectMapper,
-        FlightReportMessage.class.getPackageName(), AirportAnnouncement.class.getPackageName());
+        FlightReportMessage.class.getPackageName(), AirportAnnouncement.class.getPackageName(),
+        CharterEventMessage.class.getPackageName());
   }
 
   @Override
@@ -64,6 +66,8 @@ public class TowerMessageListener implements MessageListener {
         consumer.onReport(report);
       } else if (payload instanceof AirportAnnouncement announcement) {
         consumer.onAnnouncement(announcement);
+      } else if (payload instanceof CharterEventMessage event) {
+        consumer.onCharterEvent(event);
       } else {
         log.error("tower message of unexpected type {}; dead-lettering to {}",
             payload == null ? "null" : payload.getClass().getName(), QueueNames.deadLetter());

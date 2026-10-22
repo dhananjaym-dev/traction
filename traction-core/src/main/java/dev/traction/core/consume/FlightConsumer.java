@@ -12,6 +12,7 @@ import dev.traction.core.api.FlightRecord.RecordType;
 import dev.traction.core.api.FlightReport;
 import dev.traction.core.api.IncidentCategory;
 import dev.traction.core.api.Pilot;
+import dev.traction.core.charter.CharterBoard;
 import dev.traction.core.clearance.ClearanceResult;
 import dev.traction.core.clearance.ClearanceService;
 import dev.traction.core.consume.HoldingPatternService.HoldOutcome;
@@ -31,8 +32,8 @@ import org.springframework.amqp.rabbit.listener.api.ChannelAwareMessageListener;
 import org.springframework.util.ClassUtils;
 
 /**
- * The per-flight loop for one airport (MANUAL ack, one listener thread):
- * airport status → ground delay → gate status → payload → clearance → land → report → settle.
+ * The per-flight loop for one airport (MANUAL ack, one listener thread): airport status →
+ * ground delay → gate status → charter abort → payload → clearance → land → report → settle.
  *
  * <p>Invariant: every delivery settles exactly once, by ack (after any confirmed republish /
  * hold / park) or by nack-requeue. Deliberate deferrals republish a fresh message to the runway
@@ -78,17 +79,19 @@ public class FlightConsumer implements ChannelAwareMessageListener {
   private final ClearanceService clearance;
   private final GroundDelayService groundDelay;
   private final HoldingPatternService holding;
+  private final CharterBoard charters;
 
   /**
    * @param rabbitTemplate Traction's plain template, for the last-resort parks only
    * @param objectMapper the mapper behind Traction's message converter, so the wire format matches
    * @param classLoader resolves each flight's {@code payloadType}
+   * @param charters the abort-marker read for charter flights
    */
   @SuppressWarnings("unchecked")
   public FlightConsumer(AirportSpec spec, StatusReader statusReader, FlightReportEmitter reportEmitter,
       RabbitTemplate rabbitTemplate, ConfirmedPublisher confirmedPublisher, AirportPauser pauser,
       ObjectMapper objectMapper, ClassLoader classLoader, ClearanceService clearance,
-      GroundDelayService groundDelay, HoldingPatternService holding) {
+      GroundDelayService groundDelay, HoldingPatternService holding, CharterBoard charters) {
     this.spec = spec;
     this.airportId = spec.airportId();
     this.names = QueueNames.of(airportId);
@@ -103,6 +106,7 @@ public class FlightConsumer implements ChannelAwareMessageListener {
     this.clearance = clearance;
     this.groundDelay = groundDelay;
     this.holding = holding;
+    this.charters = charters;
   }
 
   @Override
@@ -159,6 +163,16 @@ public class FlightConsumer implements ChannelAwareMessageListener {
       reportEmitter.emitRecord(flight,
           FlightReport.skipped(FlightReportMessage.REASON_GATE_GROUNDED), Disposition.PARKED);
       confirmedPublisher.publish(names.parked(), flight, null);
+      ack(channel, tag, settled);
+      return;
+    }
+
+    // 3b. Charter abort: an aborted charter's remaining flights settle SKIPPED CHARTER_ABORTED
+    // (TERMINAL, acked, never parked), before clearance so they burn no slots. The marker read
+    // fails open: an unreadable marker flies the flight.
+    if (flight.charterRef() != null && charters.isAborted(flight.charterRef())) {
+      reportEmitter.emitRecord(flight,
+          FlightReport.skipped(FlightReportMessage.REASON_CHARTER_ABORTED), Disposition.TERMINAL);
       ack(channel, tag, settled);
       return;
     }

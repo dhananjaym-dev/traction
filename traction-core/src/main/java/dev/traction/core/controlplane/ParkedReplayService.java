@@ -7,6 +7,7 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.GetResponse;
 import dev.traction.core.api.Flight;
 import dev.traction.core.api.NotifyEvent;
+import dev.traction.core.charter.ReplayTally;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.topology.QueueNames;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Moves every parked flight of an airport back to its runway, after the underlying fault has
@@ -23,6 +25,10 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
  * consumers are idempotent on {@code domainRef}) but never loses it. A replayed flight starts a
  * fresh life: attempt and hold counts reset to zero, otherwise a flight parked for exhausting its
  * hold budget would be parked again at its first new failure.
+ *
+ * <p>A flight that belongs to a charter is first reported to the {@link ReplayTally} (if one is
+ * registered), before its runway publish, so the charter stops counting it as parked and its
+ * next settled outcome counts once. A tally failure requeues that message and stops the replay.
  *
  * <p>Parked messages that are not decodable flights cannot be reset, so they are requeued where
  * they were (reported as {@code skipped}). One operation per airport at a time ({@link ParkedOpLock}).
@@ -37,14 +43,17 @@ public class ParkedReplayService {
   private final ObjectMapper objectMapper;
   private final ParkedOpLock lock;
   private final NotifyDispatcher notify;
+  private final ObjectProvider<ReplayTally> tally;
 
   public ParkedReplayService(RabbitTemplate rabbitTemplate, ConfirmedPublisher confirmedPublisher,
-      ObjectMapper objectMapper, ParkedOpLock lock, NotifyDispatcher notify) {
+      ObjectMapper objectMapper, ParkedOpLock lock, NotifyDispatcher notify,
+      ObjectProvider<ReplayTally> tally) {
     this.rabbitTemplate = rabbitTemplate;
     this.confirmedPublisher = confirmedPublisher;
     this.objectMapper = objectMapper;
     this.lock = lock;
     this.notify = notify;
+    this.tally = tally;
   }
 
   /**
@@ -73,6 +82,7 @@ public class ParkedReplayService {
 
   private ReplayResult pump(Channel channel, String airportId) throws Exception {
     QueueNames names = QueueNames.of(airportId);
+    ReplayTally charters = tally.getIfAvailable();
     List<Long> undecodable = new ArrayList<>();
     int replayed = 0;
     try {
@@ -93,6 +103,9 @@ public class ParkedReplayService {
           continue;
         }
         try {
+          if (charters != null && flight.charterRef() != null && flight.flightId() != null) {
+            charters.replayed(flight.charterRef(), flight.flightId()); // before it can land again
+          }
           confirmedPublisher.publish(names.runway(), fresh(flight), null);
           channel.basicAck(tag, false); // only after the broker confirmed the publish
         } catch (Exception e) {

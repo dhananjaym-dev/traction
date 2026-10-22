@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.traction.core.charter.CharterEventMessage;
 import dev.traction.core.registry.AirportAnnouncement;
 import dev.traction.core.report.FlightReportMessage;
 import java.nio.charset.StandardCharsets;
@@ -34,16 +35,20 @@ class TowerMessageListenerTest {
       new TowerMessageListener(TowerMessageListener.converter(mapper), consumer, 0);
 
   @Test
-  void reportsAndAnnouncementsArriveAsTheTypesThatWereSent() {
+  void reportsAnnouncementsAndCharterEventsArriveAsTheTypesThatWereSent() {
     FlightReportMessage report = airportFault();
     AirportAnnouncement announcement = AirportAnnouncement.of(AIRPORT, "demo-app", "Acme CRM",
         60, 60L, 60, List.of(new AirportAnnouncement.GateAnnouncement("contact-sync", 1)));
+    CharterEventMessage opened = CharterEventMessage.opened("mail:acme/welcome/run-1", "mail:acme",
+        "welcome", 3);
 
     listener.onMessage(publisher.toMessage(report, new MessageProperties()));
     listener.onMessage(publisher.toMessage(announcement, new MessageProperties()));
+    listener.onMessage(publisher.toMessage(opened, new MessageProperties()));
 
     verify(consumer).onReport(report);
     verify(consumer).onAnnouncement(announcement);
+    verify(consumer).onCharterEvent(opened);
   }
 
   @Test

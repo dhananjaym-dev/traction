@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -25,6 +26,7 @@ public final class AirportSpec {
   private Pilot<?> pilot;
   private FlightReporter reporter;
   private HoldPolicy holdPolicy;
+  private CharterConcurrency charterConcurrency = CharterConcurrency.NONE;
 
   private AirportSpec(String airportId) {
     this.airportId = checkId("airportId", airportId);
@@ -77,6 +79,12 @@ public final class AirportSpec {
     return this;
   }
 
+  /** Admission policy for charters opened on this airport; {@link CharterConcurrency#NONE} by default. */
+  public AirportSpec charterConcurrency(CharterConcurrency charterConcurrency) {
+    this.charterConcurrency = Objects.requireNonNull(charterConcurrency, "charterConcurrency");
+    return this;
+  }
+
   public String airportId() { return airportId; }
 
   public String displayName() { return displayName; }
@@ -88,6 +96,8 @@ public final class AirportSpec {
   public Pilot<?> pilot() { return pilot; }
 
   public FlightReporter reporter() { return reporter; }
+
+  public CharterConcurrency charterConcurrency() { return charterConcurrency; }
 
   /** The hold policy for a category: the override for TRANSIENT/INTERNAL, else the default. */
   public HoldPolicy holdPolicyFor(IncidentCategory category) {

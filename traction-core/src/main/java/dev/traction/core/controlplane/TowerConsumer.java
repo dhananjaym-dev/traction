@@ -4,6 +4,8 @@ import dev.traction.core.api.AirportStatus;
 import dev.traction.core.api.Evidence;
 import dev.traction.core.api.FlightRecord.Disposition;
 import dev.traction.core.api.NotifyEvent;
+import dev.traction.core.charter.CharterBoard;
+import dev.traction.core.charter.CharterEventMessage;
 import dev.traction.core.consume.FlightConsumer;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.registry.AirportAnnouncement;
@@ -21,6 +23,7 @@ import org.slf4j.MDC;
  * <ol>
  *   <li>re-clamp the evidence (foreign producers may exceed the bounds);</li>
  *   <li>feed the {@link GroundStopRules} (which ground-stop and notify on a state change);</li>
+ *   <li>count a charter flight's settled outcome on the {@link CharterBoard};</li>
  *   <li>INCIDENT reports go to the {@link IncidentSummaryStore} (recent incidents);</li>
  *   <li>a FLIGHT_INCIDENT notification, under the rule below.</li>
  * </ol>
@@ -28,9 +31,13 @@ import org.slf4j.MDC;
  * {@code tr.dlq} after the delivery limit): an AIRPORT_FAULT whose ground stop could not be
  * written is retried, never acked away. Streak reads already fail soft inside
  * {@link StreakTracker}, so in practice this is the status write. A report the rules reject as
- * malformed ({@link IllegalArgumentException}) is logged and acked. Steps 3 and 4 run only after
- * the rules succeeded (so a redelivered report is recorded and notified once) and are best
- * effort: a failure is logged and the report is still acked.
+ * malformed ({@link IllegalArgumentException}) is logged and acked. A charter counting failure
+ * propagates the same way, so a count is never lost; the board counts each flight once, so the
+ * redelivery cannot double count. Steps 4 and 5 run only after the rules and the count
+ * succeeded (so a redelivered report is recorded and notified once) and are best effort: a
+ * failure is logged and the report is still acked.
+ *
+ * <p>Charter events ({@link CharterEventMessage}) arrive on the same queue and go to the board.
  *
  * <p><b>FLIGHT_INCIDENT rule.</b> One notification per flight the framework gave up on: a RECORD
  * row with outcome INCIDENT and disposition PARKED or TERMINAL. Never for INTERIM rows (holds and
@@ -48,14 +55,16 @@ public class TowerConsumer {
   private final StatusReader status;
   private final NotifyDispatcher notify;
   private final AnnouncementProjector announcements;
+  private final CharterBoard charters;
 
   public TowerConsumer(GroundStopRules rules, IncidentSummaryStore incidents, StatusReader status,
-      NotifyDispatcher notify, AnnouncementProjector announcements) {
+      NotifyDispatcher notify, AnnouncementProjector announcements, CharterBoard charters) {
     this.rules = rules;
     this.incidents = incidents;
     this.status = status;
     this.notify = notify;
     this.announcements = announcements;
+    this.charters = charters;
   }
 
   public void onReport(FlightReportMessage message) {
@@ -75,6 +84,7 @@ public class TowerConsumer {
       // Any other rules failure (the status CAS on a Redis outage) propagates: the listener
       // requeues the report, so a ground stop is never silently lost. Everything below runs only
       // once the rules succeeded, so a redelivered report is summarized and notified once.
+      charters.record(m); // RECORD rows of charter flights only; a failure requeues (deduped per flight)
       if (!"INCIDENT".equals(m.outcome())) {
         return;
       }
@@ -92,6 +102,18 @@ public class TowerConsumer {
       }
     } finally {
       MDC.remove(FlightConsumer.MDC_CORRELATION_ID);
+    }
+  }
+
+  /**
+   * A charter event: OPENED notifies {@code CHARTER_OPENED} once. A Redis failure propagates (the
+   * listener requeues); an event that can never apply is logged and acked.
+   */
+  public void onCharterEvent(CharterEventMessage event) {
+    try {
+      charters.opened(event);
+    } catch (IllegalArgumentException malformed) {
+      log.warn("charter event rejected; acked: {}", malformed.getMessage());
     }
   }
 

@@ -31,6 +31,7 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.GetResponse;
 import dev.traction.core.api.Flight;
 import dev.traction.core.api.NotifyEvent;
+import dev.traction.core.charter.ReplayTally;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.publish.ConfirmedPublisher.PublishException;
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.ChannelCallback;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 
 /** Replay moves parked flights to the runway, publish-confirmed before each ack. */
 class ParkedReplayServiceTest {
@@ -50,8 +52,16 @@ class ParkedReplayServiceTest {
   private final ConfirmedPublisher publisher = mock(ConfirmedPublisher.class);
   private final ParkedOpLock lock = mock(ParkedOpLock.class);
   private final List<NotifyEvent> notified = new ArrayList<>();
+  private final ReplayTally tally = mock(ReplayTally.class);
   private final ParkedReplayService service = new ParkedReplayService(template, publisher,
-      new ObjectMapper(), lock, new NotifyDispatcher(List.of(notified::add)));
+      new ObjectMapper(), lock, new NotifyDispatcher(List.of(notified::add)), provider(tally));
+
+  @SuppressWarnings("unchecked")
+  private static ObjectProvider<ReplayTally> provider(ReplayTally tally) {
+    ObjectProvider<ReplayTally> provider = mock(ObjectProvider.class);
+    when(provider.getIfAvailable()).thenReturn(tally);
+    return provider;
+  }
 
   @SuppressWarnings("unchecked")
   private Flight<JsonNode> published(int index) {
@@ -100,6 +110,31 @@ class ParkedReplayServiceTest {
     assertEquals("company-sync", flight.gateId());
     assertEquals("corr-1", flight.correlationId());
     assertEquals("p-1", flight.payload().asText());
+  }
+
+  /** Review Focus 5: the charter un-counts the parked flight before it re-enters the runway. */
+  @Test
+  void eachCharterFlightIsUncountedBeforeItsRunwayPublishAndAFailedUncountKeepsItParked()
+      throws Exception {
+    when(lock.acquire(AIRPORT)).thenReturn("tok");
+    UUID a = UUID.randomUUID();
+    UUID b = UUID.randomUUID();
+    when(channel.basicGet(PARKED, false)).thenReturn(parked(1, a, "mail:acme/welcome/run-1", 1, 0, 1),
+        parked(2, b, null, 1, 0, 0), (GetResponse) null);
+
+    service.replayParked(AIRPORT);
+
+    var order = inOrder(tally, publisher, channel);
+    order.verify(tally).replayed("mail:acme/welcome/run-1", a);
+    order.verify(publisher).publish(eq(RUNWAY), any(), isNull());
+    order.verify(channel).basicAck(1L, false);
+    verify(tally, times(1)).replayed(anyString(), any()); // no charter, no tally
+
+    doThrow(new IllegalStateException("redis down")).when(tally).replayed(anyString(), any());
+    when(channel.basicGet(PARKED, false)).thenReturn(parked(3, a, "mail:acme/welcome/run-1", 1, 0, 0));
+    assertThrows(IllegalStateException.class, () -> service.replayParked(AIRPORT));
+    verify(channel).basicNack(3L, false, true);
+    verify(publisher, times(2)).publish(eq(RUNWAY), any(), isNull()); // nothing new published
   }
 
   @Test

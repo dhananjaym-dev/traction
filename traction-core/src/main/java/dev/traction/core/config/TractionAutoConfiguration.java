@@ -2,9 +2,13 @@ package dev.traction.core.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.traction.core.api.AirportSpec;
+import dev.traction.core.api.CharterDesk;
 import dev.traction.core.api.FlightEventHook;
 import dev.traction.core.api.NotifyHook;
 import dev.traction.core.api.Tower;
+import dev.traction.core.charter.CharterBoard;
+import dev.traction.core.charter.CharterEventPublisher;
+import dev.traction.core.charter.CharterOpener;
 import dev.traction.core.clearance.ClearanceService;
 import dev.traction.core.consume.FlightConsumer;
 import dev.traction.core.consume.GroundDelayService;
@@ -153,11 +157,11 @@ public class TractionAutoConfiguration {
       ConfirmedPublisher confirmedPublisher, ObjectProvider<AirportRegistry> registry,
       @Qualifier("tractionObjectMapper") ObjectMapper tractionObjectMapper,
       ResourceLoader resourceLoader, ClearanceService clearance, GroundDelayService groundDelay,
-      HoldingPatternService holding) {
+      HoldingPatternService holding, CharterBoard charterBoard) {
     ClassLoader classLoader = resourceLoader.getClassLoader();
     return spec -> new FlightConsumer(spec, statusReader, reportEmitter, tractionTemplate,
         confirmedPublisher, airportId -> registry.getObject().requestPause(airportId),
-        tractionObjectMapper, classLoader, clearance, groundDelay, holding);
+        tractionObjectMapper, classLoader, clearance, groundDelay, holding, charterBoard);
   }
 
   @Bean
@@ -196,6 +200,33 @@ public class TractionAutoConfiguration {
   @Bean
   public GroundDelayService tractionGroundDelayService(StringRedisTemplate redis) {
     return new GroundDelayService(redis);
+  }
+
+  /**
+   * The charter projection. Here, not in the control plane, because the data plane reads its
+   * abort marker per flight; its counting, completion and abort are driven only by control-plane
+   * beans (tower consumer, replay and discard through the tally seams, sweep, admin abort).
+   */
+  @Bean
+  public CharterBoard tractionCharterBoard(StringRedisTemplate redis, NotifyDispatcher notifyDispatcher) {
+    return new CharterBoard(redis, notifyDispatcher);
+  }
+
+  @Bean
+  public CharterEventPublisher tractionCharterEventPublisher(ConfirmedPublisher confirmedPublisher) {
+    return new CharterEventPublisher(confirmedPublisher);
+  }
+
+  @Bean
+  public CharterOpener tractionCharterOpener(AirportRegistry registry, StringRedisTemplate redis,
+      CharterEventPublisher charterEvents) {
+    return new CharterOpener(registry, redis, charterEvents);
+  }
+
+  /** Opens charters on the airports registered in this process (any process, control plane or not). */
+  @Bean
+  public CharterDesk tractionCharterDesk(CharterOpener opener) {
+    return new CharterDesk(opener);
   }
 
   /**

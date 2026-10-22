@@ -17,6 +17,8 @@ import static org.mockito.Mockito.when;
 
 import dev.traction.core.api.AirportStatus;
 import dev.traction.core.api.NotifyEvent;
+import dev.traction.core.charter.CharterBoard;
+import dev.traction.core.charter.CharterEventMessage;
 import dev.traction.core.hooks.NotifyDispatcher;
 import dev.traction.core.registry.AirportAnnouncement;
 import dev.traction.core.report.FlightReportMessage;
@@ -34,9 +36,10 @@ class TowerConsumerTest {
   private final IncidentSummaryStore incidents = mock(IncidentSummaryStore.class);
   private final StatusReader status = mock(StatusReader.class);
   private final AnnouncementProjector projector = mock(AnnouncementProjector.class);
+  private final CharterBoard charters = mock(CharterBoard.class);
   private final List<NotifyEvent> notified = new ArrayList<>();
   private final TowerConsumer tower = new TowerConsumer(rules, incidents, status,
-      new NotifyDispatcher(List.of(notified::add)), projector);
+      new NotifyDispatcher(List.of(notified::add)), projector, charters);
 
   @BeforeEach
   void setUp() {
@@ -109,6 +112,26 @@ class TowerConsumerTest {
     verify(rules).evaluate(any());
     verify(incidents, never()).record(any());
     assertTrue(notified.isEmpty());
+  }
+
+  @Test
+  void reportsAndOpenedEventsReachTheCharterBoardAndABoardFailureIsRedelivered() {
+    FlightReportMessage landed = landed("contact-sync");
+    CharterEventMessage opened = CharterEventMessage.opened("mail:acme/welcome/run-1", "mail:acme",
+        "welcome", 3);
+
+    tower.onReport(landed);
+    tower.onCharterEvent(opened);
+
+    verify(charters).record(landed); // the board keeps only RECORD rows of charter flights
+    verify(charters).opened(opened);
+
+    // Counting is idempotent per flight, so a Redis failure requeues the report rather than
+    // losing the count; a malformed event can never apply and is acked.
+    doThrow(new IllegalStateException("redis down")).when(charters).record(any());
+    assertThrows(IllegalStateException.class, () -> tower.onReport(landed("contact-sync")));
+    doThrow(new IllegalArgumentException("no charterRef")).when(charters).opened(any());
+    tower.onCharterEvent(opened);
   }
 
   @Test

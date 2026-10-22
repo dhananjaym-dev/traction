@@ -33,6 +33,7 @@ import dev.traction.core.api.FlightReport;
 import dev.traction.core.api.FlightReporter;
 import dev.traction.core.api.IncidentCategory;
 import dev.traction.core.api.Pilot;
+import dev.traction.core.charter.CharterBoard;
 import dev.traction.core.clearance.ClearanceResult;
 import dev.traction.core.clearance.ClearanceService;
 import dev.traction.core.publish.ConfirmedPublisher;
@@ -79,6 +80,7 @@ class FlightConsumerTest {
   @SuppressWarnings("unchecked")
   private final Pilot<Contact> pilot = mock(Pilot.class);
   private final FlightReporter reporter = mock(FlightReporter.class);
+  private final CharterBoard charters = mock(CharterBoard.class);
   private final List<FlightRecord> records = new ArrayList<>();
   private AirportSpec spec;
   private FlightConsumer consumer;
@@ -90,7 +92,7 @@ class FlightConsumerTest {
     FlightReportEmitter emitter = new FlightReportEmitter(publisher, List.of(records::add));
     consumer = new FlightConsumer(spec, statusReader, emitter, rabbitTemplate, publisher, pauser,
         MAPPER, getClass().getClassLoader(), clearance, groundDelay,
-        new HoldingPatternService(publisher));
+        new HoldingPatternService(publisher), charters);
     when(statusReader.get(any())).thenReturn(AirportStatus.OPEN);
     when(clearance.acquire(eq(AIRPORT), any(), anyInt()))
         .thenReturn(ClearanceResult.cleared());
@@ -294,6 +296,21 @@ class FlightConsumerTest {
     assertRecord(onlyRecord(), RecordType.RECORD, Outcome.SKIPPED, Disposition.PARKED, null,
         "GATE_GROUNDED");
     verifyNoInteractions(clearance, pilot, reporter);
+    assertAckedOnce();
+  }
+
+  @Test
+  void anAbortedChartersFlightSkipsAsCharterAbortedBeforeClearance() throws Exception {
+    Flight<Contact> flight = new Flight<>(UUID.randomUUID(), AIRPORT, "contact", "contact-42",
+        "crm:acme/contact/run-1", 0, 0, "abc123", Contact.class.getName(), new Contact("a@acme.test"));
+    when(charters.isAborted("crm:acme/contact/run-1")).thenReturn(true);
+
+    consumer.onMessage(message(flight), channel);
+
+    assertRecord(onlyRecord(), RecordType.RECORD, Outcome.SKIPPED, Disposition.TERMINAL, null,
+        "CHARTER_ABORTED");
+    assertEquals("crm:acme/contact/run-1", onlyRecord().charterRef());
+    verifyNoInteractions(clearance, pilot, reporter); // no slot burned, nothing flown
     assertAckedOnce();
   }
 
