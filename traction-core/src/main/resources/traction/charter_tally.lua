@@ -15,7 +15,8 @@
 -- complete: ARGV[5] = source (SWEEP)
 --
 -- Returns a bitmask: 1 = this call changed the charter, 2 = this call completed it; 0 = no-op;
--- -1 = no such charter (never opened, or its retention ran out: nothing is counted or created).
+-- -1 = no such charter (never opened, or its retention ran out: nothing is counted or created);
+-- -2 = abort of a charter that is no longer OPEN (already completed: a no-op).
 --
 -- Buckets: landed, rejected, skipped, parked, discarded. Completion (the latch):
 --   status OPEN and landed + rejected + skipped + parked + discarded >= expected
@@ -112,6 +113,10 @@ end
 
 if op == 'abort' then
   -- Records the abort once; completion stays with the latch (the skipped rows fill the books).
+  -- A charter that already completed has nothing left to abort: -2, nothing written.
+  if redis.call('HGET', h, 'status') ~= 'OPEN' then
+    return -2
+  end
   local changed = 0
   if redis.call('HSETNX', h, 'abortedAt', now) == 1 then
     redis.call('HSET', h, 'abortedBy', ARGV[5])

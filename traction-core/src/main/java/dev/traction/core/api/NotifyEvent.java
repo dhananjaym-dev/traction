@@ -12,7 +12,10 @@ public record NotifyEvent(
     Map<String, String> detail) {
 
   public enum Type {
-    GROUND_STOP, REOPEN, GROUND_DELAY, FLIGHT_INCIDENT,
+    GROUND_STOP, REOPEN,
+    /** Reserved; not emitted in v1. */
+    GROUND_DELAY,
+    FLIGHT_INCIDENT,
     CHARTER_OPENED, CHARTER_COMPLETED, CHARTER_ABORTED,
     PARKED_REPLAYED, PARKED_DISCARDED
   }

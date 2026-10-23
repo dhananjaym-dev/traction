@@ -21,5 +21,7 @@ class DashboardControllerTest {
     String html = response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
     assertTrue(html.contains("/airports") && html.contains("/charters"));
     assertFalse(html.contains("POST") || html.contains("<button"), "the dashboard is read-only");
+    assertEquals(200, standaloneSetup(new DashboardController()).build()
+        .perform(get("/traction/")).andReturn().getResponse().getStatus()); // the typed trailing slash
   }
 }

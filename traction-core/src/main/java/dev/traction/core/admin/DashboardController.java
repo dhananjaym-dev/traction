@@ -28,7 +28,7 @@ public class DashboardController {
     }
   }
 
-  @GetMapping("/traction")
+  @GetMapping({"/traction", "/traction/"})
   public ResponseEntity<String> dashboard() {
     return ResponseEntity.ok()
         .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))

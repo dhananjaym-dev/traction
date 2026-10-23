@@ -52,6 +52,8 @@ public class ParkedDiscardService {
    *
    * @throws IllegalArgumentException {@code confirmToken} is not {@value #CONFIRM_TOKEN}; nothing was touched
    * @throws ParkedOpInProgressException another replay or discard holds the airport
+   * @throws IllegalStateException a tally or ack failed; flights already dropped stay dropped
+   *     (the message says how many), the failing one stays parked
    */
   public DiscardResult discardParked(String airportId, String confirmToken) {
     if (!CONFIRM_TOKEN.equals(confirmToken)) {
@@ -62,7 +64,7 @@ public class ParkedDiscardService {
       throw new ParkedOpInProgressException(airportId);
     }
     try {
-      DiscardResult result = rabbitTemplate.execute(channel -> pump(channel, airportId));
+      DiscardResult result = ParkedReplayService.onChannel(rabbitTemplate, channel -> pump(channel, airportId));
       log.warn("airport {}: discarded {} parked flights", airportId, result.dropped());
       notify.dispatch(new NotifyEvent(NotifyEvent.Type.PARKED_DISCARDED, airportId, null, null, null,
           Map.of("count", String.valueOf(result.dropped()))));
@@ -96,7 +98,11 @@ public class ParkedDiscardService {
         channel.basicAck(tag, false); // the drop; after the tally, so a failed tally keeps the message
       } catch (Exception e) {
         channel.basicNack(tag, false, true);
-        throw e;
+        // The audit line for a partial drop: what is gone stays gone, the rest stays parked.
+        log.warn("airport {}: discard stopped after dropping {} parked flights; the rest stay parked",
+            airportId, dropped, e);
+        throw new IllegalStateException("discard of airport " + airportId + " stopped after dropping "
+            + dropped + " flights: " + e.getMessage(), e);
       }
       dropped++;
     }

@@ -86,6 +86,8 @@ class TowerTest {
     IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
         () -> tower.dispatch("nope", "contacts", new Contact("a@b.c")));
     assertTrue(e.getMessage().contains("nope"));
+    assertThrows(IllegalArgumentException.class,
+        () -> tower.dispatch(null, "contacts", new Contact("a@b.c"))); // never an NPE
     verifyNoInteractions(rabbit);
   }
 

@@ -101,6 +101,7 @@ public class CharterBoard implements DiscardTally, ReplayTally {
   private static final long CHANGED = 1;
   private static final long COMPLETED = 2;
   private static final long UNKNOWN = -1;
+  private static final long NOT_OPEN = -2;
 
   /**
    * One charter as stored. {@code status} is OPEN, COMPLETED or ABORTED; {@code source} (LATCH,
@@ -190,13 +191,18 @@ public class CharterBoard implements DiscardTally, ReplayTally {
    * flights settle {@code SKIPPED CHARTER_ABORTED}, and the latch completes it (source
    * {@code ABORT}) when they bring the books to {@code expected}. Idempotent. The marker is
    * written even for an unknown ref, so leftover flights of an expired charter are skipped too.
+   * A charter that already completed is left alone: no marker, no {@code CHARTER_ABORTED}.
    *
-   * @return false when no charter is stored under {@code charterRef}
+   * @return false when no charter is stored under {@code charterRef}, or it already completed
    */
   public boolean abort(String charterRef, String actor) {
     String by = actor == null || actor.isBlank() ? "anonymous" : actor;
-    redis.opsForValue().set(CharterKeys.abortedKey(charterRef), by, CLOSED_TTL);
     long result = tally("abort", charterRef, by);
+    if (result == NOT_OPEN) {
+      log.info("charter {} abort by {}: already completed; nothing to abort", charterRef, by);
+      return false;
+    }
+    redis.opsForValue().set(CharterKeys.abortedKey(charterRef), by, CLOSED_TTL);
     if (result == UNKNOWN) {
       log.warn("charter {} abort by {}: no charter stored; skip-window marker written", charterRef, by);
       return false;
@@ -283,7 +289,7 @@ public class CharterBoard implements DiscardTally, ReplayTally {
   }
 
   private void afterCompletion(String charterRef, long result) {
-    if (result == UNKNOWN || (result & COMPLETED) == 0) {
+    if (result < 0 || (result & COMPLETED) == 0) { // UNKNOWN / NOT_OPEN carry no bits
       return;
     }
     notifyFromSnapshot(NotifyEvent.Type.CHARTER_COMPLETED, charterRef, Map.of());

@@ -158,8 +158,9 @@ class ParkedReplayServiceTest {
     doThrow(new PublishException("broker did not confirm publish to " + RUNWAY))
         .when(publisher).publish(eq(RUNWAY), any(), isNull());
 
-    assertThrows(IllegalStateException.class, () -> service.replayParked(AIRPORT));
+    IllegalStateException e = assertThrows(IllegalStateException.class, () -> service.replayParked(AIRPORT));
 
+    assertTrue(e.getMessage().contains("stopped after 0 flights"), e.getMessage()); // unwrapped
     verify(channel).basicNack(1L, false, true);
     verify(channel, never()).basicAck(anyLong(), anyBoolean());
     verify(channel, times(1)).basicGet(PARKED, false);

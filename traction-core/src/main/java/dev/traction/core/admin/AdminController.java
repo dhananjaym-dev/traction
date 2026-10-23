@@ -33,6 +33,7 @@ import dev.traction.core.topology.QueueNames;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -208,7 +209,8 @@ public class AdminController {
 
   /**
    * HTTP mapping for this controller only. The in-progress subclass is mapped on its own, so it
-   * is a 409 and not the generic 500 of its {@code IllegalStateException} parent.
+   * is a 409 and not the generic 500 of its {@code IllegalStateException} parent. A broker
+   * failure ({@code AmqpException}) is the same documented 500 {@code {"error": ...}} body.
    */
   @RestControllerAdvice(assignableTypes = AdminController.class)
   public static class Errors {
@@ -235,6 +237,12 @@ public class AdminController {
 
     @ExceptionHandler(IllegalStateException.class)
     ResponseEntity<ErrorResponse> failed(IllegalStateException e) {
+      log.warn("admin operation failed: {}", e.getMessage());
+      return error(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    }
+
+    @ExceptionHandler(AmqpException.class)
+    ResponseEntity<ErrorResponse> brokerFailed(AmqpException e) {
       log.warn("admin operation failed: {}", e.getMessage());
       return error(HttpStatus.INTERNAL_SERVER_ERROR, e);
     }

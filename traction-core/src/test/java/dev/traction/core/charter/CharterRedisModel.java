@@ -220,6 +220,9 @@ final class CharterRedisModel {
         return 1 + maybeComplete(h, hKey, seenKey, openSet, admission, ref, now, ttl);
       }
       case "abort" -> {
+        if (!"OPEN".equals(h.get("status"))) {
+          return -2;
+        }
         long changed = 0;
         if (h.putIfAbsent("abortedAt", now) == null) {
           h.put("abortedBy", a[4]);

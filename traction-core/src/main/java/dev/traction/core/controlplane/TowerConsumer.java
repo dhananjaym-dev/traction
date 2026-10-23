@@ -32,7 +32,8 @@ import org.slf4j.MDC;
  * written is retried, never acked away. Streak reads already fail soft inside
  * {@link StreakTracker}, so in practice this is the status write. A report the rules reject as
  * malformed ({@link IllegalArgumentException}) is logged and acked. A charter counting failure
- * propagates the same way, so a count is never lost; the board counts each flight once, so the
+ * propagates the same way, so the count survives redelivery up to the tower's delivery limit
+ * (20), after which the report goes to {@code tr.dlq}; the board counts each flight once, so the
  * redelivery cannot double count. Steps 4 and 5 run only after the rules and the count
  * succeeded (so a redelivered report is recorded and notified once) and are best effort: a
  * failure is logged and the report is still acked.

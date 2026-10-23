@@ -40,12 +40,14 @@ import dev.traction.core.registry.AirportAnnouncement.GateAnnouncement;
 import dev.traction.core.report.FlightReportMessage;
 import dev.traction.core.report.FlightReportMessage.RecordType;
 import dev.traction.core.status.ScopeRef;
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.AmqpIOException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -167,6 +169,18 @@ class AdminControllerTest {
 
     doThrow(new IllegalStateException("publish not confirmed")).when(replay).replayParked(AIRPORT);
     assertEquals(500, code(mvc.perform(post(AIRPORTS + AIRPORT + "/replayParked"))));
+  }
+
+  @Test
+  void aBrokerFailureIsTheDocumented500ErrorBody() throws Exception {
+    doThrow(new AmqpIOException(new IOException("channel closed"))).when(discard)
+        .discardParked(AIRPORT, "discard-all");
+
+    ResultActions result = mvc.perform(post(AIRPORTS + AIRPORT + "/discardParked")
+        .contentType(MediaType.APPLICATION_JSON).content("{\"confirm\":\"discard-all\"}"));
+
+    assertEquals(500, code(result));
+    assertTrue(json(result).get("error").asText().contains("channel closed"));
   }
 
   @Test

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.springframework.amqp.rabbit.core.ChannelCallback;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.rabbit.support.RabbitExceptionTranslator;
 
 /** Shared fixtures for the parked replay and discard tests. */
 final class ParkedOps {
@@ -22,13 +23,21 @@ final class ParkedOps {
 
   private ParkedOps() { }
 
-  /** A template whose {@code execute} runs the callback against {@code channel}. */
+  /**
+   * A template whose {@code execute} runs the callback against {@code channel} and, like the real
+   * one, wraps what the callback throws ({@code UncategorizedAmqpException} for a plain exception).
+   */
   @SuppressWarnings("unchecked")
   static RabbitTemplate templateOver(Channel channel) {
     RabbitTemplate template = mock(RabbitTemplate.class);
     try {
-      when(template.execute(any(ChannelCallback.class)))
-          .thenAnswer(inv -> ((ChannelCallback<Object>) inv.getArgument(0)).doInRabbit(channel));
+      when(template.execute(any(ChannelCallback.class))).thenAnswer(inv -> {
+        try {
+          return ((ChannelCallback<Object>) inv.getArgument(0)).doInRabbit(channel);
+        } catch (Exception e) {
+          throw RabbitExceptionTranslator.convertRabbitAccessException(e);
+        }
+      });
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }

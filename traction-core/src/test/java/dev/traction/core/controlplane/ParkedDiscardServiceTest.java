@@ -110,13 +110,18 @@ class ParkedDiscardServiceTest {
     };
     when(tally.getIfAvailable()).thenReturn(broken);
     when(lock.acquire(AIRPORT)).thenReturn("tok");
-    when(channel.basicGet(PARKED, false))
-        .thenReturn(parked(1, UUID.randomUUID(), "c-1", 0, 0, 0), (GetResponse) null);
+    when(channel.basicGet(PARKED, false)).thenReturn(parked(1, UUID.randomUUID(), null, 0, 0, 1),
+        parked(2, UUID.randomUUID(), "c-1", 0, 0, 0), (GetResponse) null);
 
-    assertThrows(IllegalStateException.class, () -> service.discardParked(AIRPORT, "discard-all"));
+    // The service's own stop, not the template's UncategorizedAmqpException wrapper, so the
+    // admin API maps it to its documented 500 body with this message.
+    IllegalStateException e = assertThrows(IllegalStateException.class,
+        () -> service.discardParked(AIRPORT, "discard-all"));
 
-    verify(channel).basicNack(1L, false, true);
-    verify(channel, never()).basicAck(anyLong(), anyBoolean());
+    assertTrue(e.getMessage().contains("stopped after dropping 1 flights"), e.getMessage());
+    verify(channel).basicAck(1L, false); // dropped before the failure: stays dropped
+    verify(channel).basicNack(2L, false, true);
+    verify(channel, never()).basicAck(2L, false);
     verify(lock).release(AIRPORT, "tok");
     assertTrue(notified.isEmpty());
   }

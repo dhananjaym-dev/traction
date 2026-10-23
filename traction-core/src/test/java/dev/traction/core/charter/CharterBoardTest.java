@@ -7,6 +7,7 @@ import static dev.traction.core.charter.CharterFixtures.parked;
 import static dev.traction.core.charter.CharterFixtures.report;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.traction.core.api.CharterConcurrency;
@@ -116,6 +117,22 @@ class CharterBoardTest {
     assertFalse(world.redis.sets.get(CharterKeys.OPEN_SET).contains(ref));
 
     assertFalse(board.abort("mail:acme/welcome/no-such-run", "ops@acme"));
+  }
+
+  @Test
+  void abortingACompletedCharterIsANoOp() {
+    String ref = world.open("run-1", 1);
+    board.record(landed(ref, UUID.randomUUID()));
+    assertEquals("COMPLETED", world.snapshot(ref).status());
+
+    assertFalse(board.abort(ref, "ops@acme")); // the API's 404
+
+    CharterBoard.CharterSnapshot s = world.snapshot(ref);
+    assertEquals("COMPLETED", s.status());
+    assertEquals("LATCH", s.source());
+    assertNull(s.abortedBy());
+    assertFalse(board.isAborted(ref)); // no skip window: a later replay of its flights still flies
+    assertEquals(List.of(Type.CHARTER_OPENED, Type.CHARTER_COMPLETED), world.notifiedTypes());
   }
 
   /** Review Focus 5: a parked flight replayed and then landed is counted once. */

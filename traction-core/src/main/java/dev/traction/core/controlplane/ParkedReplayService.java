@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.UncategorizedAmqpException;
+import org.springframework.amqp.rabbit.core.ChannelCallback;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -69,7 +71,7 @@ public class ParkedReplayService {
       throw new ParkedOpInProgressException(airportId);
     }
     try {
-      ReplayResult result = rabbitTemplate.execute(channel -> pump(channel, airportId));
+      ReplayResult result = onChannel(rabbitTemplate, channel -> pump(channel, airportId));
       log.info("airport {}: replayed {} parked flights to the runway ({} undecodable left parked)",
           airportId, result.replayed(), result.skipped());
       notify.dispatch(new NotifyEvent(NotifyEvent.Type.PARKED_REPLAYED, airportId, null, null, null,
@@ -121,6 +123,21 @@ public class ParkedReplayService {
       }
     }
     return new ReplayResult(airportId, replayed, undecodable.size());
+  }
+
+  /**
+   * {@code rabbitTemplate.execute}, minus the template's wrapping: a stop this service raised
+   * itself (an {@code IllegalStateException}) reaches the caller as is, with its message.
+   */
+  static <T> T onChannel(RabbitTemplate rabbitTemplate, ChannelCallback<T> callback) {
+    try {
+      return rabbitTemplate.execute(callback);
+    } catch (UncategorizedAmqpException e) {
+      if (e.getCause() instanceof IllegalStateException own) {
+        throw own;
+      }
+      throw e;
+    }
   }
 
   private static Flight<JsonNode> fresh(Flight<JsonNode> f) {

@@ -210,8 +210,9 @@ public class AirportRegistry implements SmartLifecycle, AirportPauser {
     }
   }
 
+  /** False for a null id (never an NPE). */
   public boolean isRegistered(String airportId) {
-    return airports.containsKey(airportId);
+    return airportId != null && airports.containsKey(airportId);
   }
 
   public Set<String> airportIds() {
@@ -223,9 +224,10 @@ public class AirportRegistry implements SmartLifecycle, AirportPauser {
     return registered != null && registered.container().isRunning();
   }
 
-  /** The gates the airport had when it registered; empty when the airport is not registered. */
+  /** The gates the airport had when it registered; empty when the airport is not registered (or null). */
   public Optional<Map<String, AirportSpec.Gate>> gatesOf(String airportId) {
-    return Optional.ofNullable(airports.get(airportId)).map(Registered::gates);
+    return airportId == null ? Optional.empty()
+        : Optional.ofNullable(airports.get(airportId)).map(Registered::gates);
   }
 
   /** The airport's charter admission policy; empty when the airport is not registered. */

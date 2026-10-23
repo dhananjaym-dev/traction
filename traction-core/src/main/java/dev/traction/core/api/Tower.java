@@ -33,6 +33,9 @@ public class Tower {
   }
 
   public Flight<Object> dispatch(String airportId, String gateId, Object payload, DispatchOptions options) {
+    if (airportId == null) {
+      throw new IllegalArgumentException("airportId is required");
+    }
     Map<String, AirportSpec.Gate> gates = registry.gatesOf(airportId)
         .orElseThrow(() -> new IllegalArgumentException("unknown airport: " + airportId));
     if (gateId == null || !gates.containsKey(gateId)) {
