@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Charter accounting: settled outcomes only (RECORD rows), once per flight, bucketed by
  * disposition first; completion fires once when the accounted outcomes reach {@code expected}; abort opens the
- * skip window and force-completes; replay and discard keep the books whole.
+ * skip window and the skipped rows complete the charter (source ABORT); replay and discard keep the books whole.
  */
 class CharterBoardTest {
 
@@ -73,32 +73,48 @@ class CharterBoardTest {
   }
 
   @Test
-  void abortOpensTheSkipWindowAndForceCompletesWithSourceAbort() {
+  void abortOpensTheSkipWindowAndTheSkippedRowsCompleteItOnceWithSourceAbort() {
     String ref = world.open("run-1", 3);
     board.record(landed(ref, UUID.randomUUID()));
 
     assertTrue(board.abort(ref, "ops@acme"));
+    assertTrue(board.abort(ref, "ops@acme")); // idempotent: nothing new fires
 
+    // Abort opens the skip window and announces itself; it does not complete the books.
     assertTrue(board.isAborted(ref));
     assertEquals(Duration.ofDays(7), world.redis.ttls.get(CharterKeys.abortedKey(ref)));
     CharterBoard.CharterSnapshot s = world.snapshot(ref);
-    assertEquals("ABORTED", s.status());
-    assertEquals("ABORT", s.source());
+    assertEquals("OPEN", s.status());
     assertEquals("ops@acme", s.abortedBy());
-    assertEquals(List.of(Type.CHARTER_OPENED, Type.CHARTER_ABORTED, Type.CHARTER_COMPLETED),
-        world.notifiedTypes());
-    assertEquals("ABORT", world.notified.get(2).reason());
+    assertEquals(List.of(Type.CHARTER_OPENED, Type.CHARTER_ABORTED), world.notifiedTypes());
+    assertEquals("ops@acme", world.notified.get(1).detail().get("actor"));
 
-    // The data plane settles the remaining flights SKIPPED CHARTER_ABORTED; they fill the books.
-    for (int i = 0; i < 2; i++) {
-      board.record(report(RecordType.RECORD, ref, UUID.randomUUID(), "SKIPPED", null,
-          "CHARTER_ABORTED", "TERMINAL"));
-    }
-    assertTrue(board.abort(ref, "ops@acme")); // idempotent: nothing new fires
+    // The data plane settles the remaining flights SKIPPED CHARTER_ABORTED; the latch completes
+    // the charter once they fill the books, with source ABORT.
+    UUID last = UUID.randomUUID();
+    board.record(report(RecordType.RECORD, ref, UUID.randomUUID(), "SKIPPED", null,
+        "CHARTER_ABORTED", "TERMINAL"));
+    assertEquals("OPEN", world.snapshot(ref).status());
+    board.record(report(RecordType.RECORD, ref, last, "SKIPPED", null, "CHARTER_ABORTED", "TERMINAL"));
+    board.record(report(RecordType.RECORD, ref, last, "SKIPPED", null, "CHARTER_ABORTED", "TERMINAL"));
+
     s = world.snapshot(ref);
     assertCounts(s, 1, 0, 2, 0, 0);
+    assertEquals("ABORTED", s.status());
+    assertEquals("ABORT", s.source());
     assertEquals(s.expected(), s.accounted());
-    assertEquals(3, world.notified.size());
+    assertEquals(List.of(Type.CHARTER_OPENED, Type.CHARTER_ABORTED, Type.CHARTER_COMPLETED),
+        world.notifiedTypes());
+    NotifyEvent completed = world.notified.get(2);
+    assertEquals("ABORT", completed.reason());
+    assertEquals("ABORT", completed.detail().get("source"));
+    long sum = 0;
+    for (String bucket : List.of("landed", "rejected", "skipped", "parked", "discarded")) {
+      sum += Long.parseLong(completed.detail().get(bucket));
+    }
+    assertEquals(3, sum); // the completion line itself satisfies the invariant
+    assertFalse(world.redis.sets.get(CharterKeys.OPEN_SET).contains(ref));
+
     assertFalse(board.abort("mail:acme/welcome/no-such-run", "ops@acme"));
   }
 

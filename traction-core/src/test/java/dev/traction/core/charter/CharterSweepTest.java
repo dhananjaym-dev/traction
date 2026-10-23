@@ -27,7 +27,8 @@ import org.springframework.amqp.core.QueueInformation;
 /**
  * The stale-charter backstop: an open charter with no progress for the stale threshold, on a
  * gate that is consuming with a provably empty runway and holding queue, is force-completed with
- * {@code source=SWEEP}. Anything that cannot be proven drained waits.
+ * {@code source=SWEEP} (status ABORTED when it had been aborted). Anything that cannot be proven
+ * drained waits.
  */
 class CharterSweepTest {
 
@@ -69,6 +70,22 @@ class CharterSweepTest {
     assertEquals(NotifyEvent.Type.CHARTER_COMPLETED, completed.type());
     assertEquals("SWEEP", completed.reason());
     assertEquals(stale, completed.detail().get("charterRef"));
+  }
+
+  @Test
+  void anAbortedCharterWhoseRemainderNeverReportsIsClosedBySweepAsAborted() {
+    when(status.get(any())).thenReturn(AirportStatus.OPEN);
+    depths(0L, 0L);
+    String ref = world.open("run-1", 10);
+    world.board.abort(ref, "ops@acme"); // its flights were lost: no skipped rows ever arrive
+
+    sweepAt(Instant.now().plus(STALE).plusSeconds(60)).sweepOnce();
+
+    assertEquals("ABORTED", world.snapshot(ref).status());
+    assertEquals("SWEEP", world.snapshot(ref).source());
+    NotifyEvent completed = world.notified.get(world.notified.size() - 1);
+    assertEquals(NotifyEvent.Type.CHARTER_COMPLETED, completed.type());
+    assertEquals("SWEEP", completed.reason());
   }
 
   @Test

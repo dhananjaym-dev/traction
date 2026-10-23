@@ -56,16 +56,19 @@ import org.springframework.scripting.support.ResourceScriptSource;
  * parked flight is settled until an operator replays or discards it. The completion latch is the
  * charter's status ({@code OPEN -> COMPLETED}, or {@code ABORTED}), flipped inside the script, so
  * {@code CHARTER_COMPLETED} fires exactly once, with {@code reason} = the source:
- * {@code LATCH} (organic), {@code SWEEP} ({@link CharterSweep}, best effort) or {@code ABORT}. A
- * completed charter keeps counting (a replayed flight landing, the abort skip window) but never
- * completes again, and never reopens: that keeps {@code PER_KEY} admission exact. Completion
+ * {@code LATCH} (organic), {@code ABORT} (the latch on an aborted charter: its skipped rows
+ * brought the books to {@code expected}) or {@code SWEEP} ({@link CharterSweep}, best effort; also
+ * the backstop for an aborted charter whose remaining flights never report). A latched completion
+ * therefore always carries books that add up. A completed charter keeps counting (a replayed
+ * flight landing) but never completes again, and never reopens: that keeps {@code PER_KEY} admission exact. Completion
  * releases the admission key, leaves the open set, and starts the 7-day retention of the hash.
  *
  * <p><b>Abort</b> ({@link #abort}): writes the skip-window marker (7 days), so the data plane
  * settles the charter's remaining flights {@code SKIPPED CHARTER_ABORTED} before clearance, and
- * force-completes the charter with source {@code ABORT}: {@code CHARTER_ABORTED} then
- * {@code CHARTER_COMPLETED}. The skipped rows keep counting, so the books still add up to
- * {@code expected} once the runway has drained. Abort is a skip window, not a purge: flights
+ * records {@code abortedAt}/{@code abortedBy}: {@code CHARTER_ABORTED} fires then. The charter
+ * stays {@code OPEN} (and keeps its admission key) while the skip window drains; when the skipped
+ * rows bring the books to {@code expected} the latch completes it with status {@code ABORTED},
+ * source {@code ABORT}, and {@code CHARTER_COMPLETED} fires with the final counts. Abort is a skip window, not a purge: flights
  * still queued when the marker expires fly normally.
  *
  * <p>A report or tally for a charter without a hash (never opened, or past its retention) is
@@ -182,17 +185,18 @@ public class CharterBoard implements DiscardTally, ReplayTally {
   }
 
   /**
-   * Aborts a charter: the 7-day skip-window marker, then a forced completion with source
-   * {@code ABORT} ({@code CHARTER_ABORTED}, then {@code CHARTER_COMPLETED} if it was still
-   * open). Idempotent. The marker is written even for an unknown ref, so leftover flights of an
-   * expired charter are skipped too.
+   * Aborts a charter: the 7-day skip-window marker, and {@code abortedAt}/{@code abortedBy} on the
+   * charter ({@code CHARTER_ABORTED}, once). It does not complete the charter: the remaining
+   * flights settle {@code SKIPPED CHARTER_ABORTED}, and the latch completes it (source
+   * {@code ABORT}) when they bring the books to {@code expected}. Idempotent. The marker is
+   * written even for an unknown ref, so leftover flights of an expired charter are skipped too.
    *
    * @return false when no charter is stored under {@code charterRef}
    */
   public boolean abort(String charterRef, String actor) {
     String by = actor == null || actor.isBlank() ? "anonymous" : actor;
     redis.opsForValue().set(CharterKeys.abortedKey(charterRef), by, CLOSED_TTL);
-    long result = tally("complete", charterRef, SOURCE_ABORT, by);
+    long result = tally("abort", charterRef, by);
     if (result == UNKNOWN) {
       log.warn("charter {} abort by {}: no charter stored; skip-window marker written", charterRef, by);
       return false;
@@ -205,9 +209,12 @@ public class CharterBoard implements DiscardTally, ReplayTally {
     return true;
   }
 
-  /** The sweep's forced completion (source {@code SWEEP}); true when this call completed it. */
+  /**
+   * The sweep's forced completion (source {@code SWEEP}, status {@code ABORTED} when the charter
+   * had been aborted); true when this call completed it.
+   */
   boolean forceComplete(String charterRef) {
-    long result = tally("complete", charterRef, SOURCE_SWEEP, "");
+    long result = tally("complete", charterRef, SOURCE_SWEEP);
     afterCompletion(charterRef, result);
     return result != UNKNOWN && (result & COMPLETED) != 0;
   }

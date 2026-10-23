@@ -219,17 +219,19 @@ final class CharterRedisModel {
         }
         return 1 + maybeComplete(h, hKey, seenKey, openSet, admission, ref, now, ttl);
       }
-      case "complete" -> {
-        String source = a[4];
+      case "abort" -> {
         long changed = 0;
-        if ("ABORT".equals(source) && h.putIfAbsent("abortedAt", now) == null) {
-          h.put("abortedBy", a[5]);
+        if (h.putIfAbsent("abortedAt", now) == null) {
+          h.put("abortedBy", a[4]);
           changed = 1;
         }
+        return changed + maybeComplete(h, hKey, seenKey, openSet, admission, ref, now, ttl);
+      }
+      case "complete" -> {
         if (!"OPEN".equals(h.get("status"))) {
-          return changed;
+          return 0;
         }
-        return 1 + complete(h, hKey, seenKey, openSet, admission, ref, now, ttl, source);
+        return 1 + complete(h, hKey, seenKey, openSet, admission, ref, now, ttl, a[4]);
       }
       case "abandon" -> {
         return 0;
@@ -248,12 +250,13 @@ final class CharterRedisModel {
       accounted += Long.parseLong(h.getOrDefault(bucket, "0"));
     }
     return accounted >= Long.parseLong(h.get("expected"))
-        ? complete(h, hKey, seenKey, openSet, admission, ref, now, ttl, "LATCH") : 0;
+        ? complete(h, hKey, seenKey, openSet, admission, ref, now, ttl,
+            h.containsKey("abortedAt") ? "ABORT" : "LATCH") : 0;
   }
 
   private long complete(Map<String, String> h, String hKey, String seenKey, String openSet,
       String admission, String ref, String now, Duration ttl, String source) {
-    h.put("status", "ABORT".equals(source) ? "ABORTED" : "COMPLETED");
+    h.put("status", h.containsKey("abortedAt") ? "ABORTED" : "COMPLETED");
     h.put("completedAt", now);
     h.put("source", source);
     sets.getOrDefault(openSet, new HashSet<>()).remove(ref);

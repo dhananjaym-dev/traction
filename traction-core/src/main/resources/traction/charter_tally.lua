@@ -6,22 +6,25 @@
 -- KEYS[2] = seen hash      tr:charter:<ref>:seen    flightId -> the bucket it is counted in
 -- KEYS[3] = open set       tr:charters-open
 -- KEYS[4] = admission key  tr:charter-admission:<airportId>/<gateId>
--- ARGV[1] = op: opened | move | complete | abandon
+-- ARGV[1] = op: opened | move | abort | complete | abandon
 -- ARGV[2] = charterRef
 -- ARGV[3] = now (epoch ms)
 -- ARGV[4] = retention after completion, seconds (hash + seen TTL)
 -- move:     ARGV[5] = flightId, ARGV[6] = from bucket ('' = not counted), ARGV[7] = to bucket ('' = un-count)
--- complete: ARGV[5] = source (SWEEP | ABORT), ARGV[6] = actor ('' for none)
+-- abort:    ARGV[5] = actor
+-- complete: ARGV[5] = source (SWEEP)
 --
 -- Returns a bitmask: 1 = this call changed the charter, 2 = this call completed it; 0 = no-op;
 -- -1 = no such charter (never opened, or its retention ran out: nothing is counted or created).
 --
--- Buckets: landed, rejected, skipped, parked, discarded. Completion:
+-- Buckets: landed, rejected, skipped, parked, discarded. Completion (the latch):
 --   status OPEN and landed + rejected + skipped + parked + discarded >= expected
--- then status COMPLETED (ABORTED for source ABORT), completedAt, source; the charter leaves the
--- open set, releases its admission key, and the hash and seen hash expire after the retention.
--- A completed charter keeps counting (late rows, replays, the abort skip window) but never
--- completes again.
+-- then status COMPLETED, completedAt, source LATCH; for an aborted charter (abortedAt set) status
+-- ABORTED and source ABORT, so its completion carries books that already add up. The charter
+-- leaves the open set, releases its admission key, and the hash and seen hash expire after the
+-- retention. 'abort' only records abortedAt/abortedBy (the skip window's SKIPPED rows then reach
+-- the latch); 'complete' is the sweep's forced close (source SWEEP, status ABORTED if aborted).
+-- A completed charter keeps counting (late rows, replays) but never completes again.
 
 local h, seen, openSet, admission = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
 local op, ref, now, ttl = ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4])
@@ -37,9 +40,13 @@ if redis.call('EXISTS', h) == 0 then
   return -1
 end
 
+local function aborted()
+  return redis.call('HEXISTS', h, 'abortedAt') == 1
+end
+
 local function complete(source)
   local status = 'COMPLETED'
-  if source == 'ABORT' then
+  if aborted() then
     status = 'ABORTED'
   end
   redis.call('HSET', h, 'status', status, 'completedAt', now, 'source', source)
@@ -65,6 +72,9 @@ local function maybeComplete()
     accounted = accounted + (tonumber(redis.call('HGET', h, bucket)) or 0)
   end
   if accounted >= expected then
+    if aborted() then
+      return complete('ABORT')
+    end
     return complete('LATCH')
   end
   return 0
@@ -100,17 +110,21 @@ if op == 'move' then
   return 1 + maybeComplete()
 end
 
-if op == 'complete' then
-  local source, actor = ARGV[5], ARGV[6]
+if op == 'abort' then
+  -- Records the abort once; completion stays with the latch (the skipped rows fill the books).
   local changed = 0
-  if source == 'ABORT' and redis.call('HSETNX', h, 'abortedAt', now) == 1 then
-    redis.call('HSET', h, 'abortedBy', actor)
+  if redis.call('HSETNX', h, 'abortedAt', now) == 1 then
+    redis.call('HSET', h, 'abortedBy', ARGV[5])
     changed = 1
   end
+  return changed + maybeComplete()
+end
+
+if op == 'complete' then
   if redis.call('HGET', h, 'status') ~= 'OPEN' then
-    return changed
+    return 0
   end
-  return 1 + complete(source)
+  return 1 + complete(ARGV[5])
 end
 
 return 0 -- abandon of a charter whose hash still exists
