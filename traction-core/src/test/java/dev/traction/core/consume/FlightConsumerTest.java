@@ -36,6 +36,7 @@ import dev.traction.core.api.Pilot;
 import dev.traction.core.charter.CharterBoard;
 import dev.traction.core.clearance.ClearanceResult;
 import dev.traction.core.clearance.ClearanceService;
+import dev.traction.core.config.TractionAutoConfiguration;
 import dev.traction.core.publish.ConfirmedPublisher;
 import dev.traction.core.report.FlightReportEmitter;
 import dev.traction.core.report.FlightReportMessage;
@@ -65,7 +66,7 @@ class FlightConsumerTest {
 
   record Contact(String email) { }
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = TractionAutoConfiguration.wireObjectMapper();
   private static final String AIRPORT = "crm:acme";
   private static final QueueNames Q = QueueNames.of(AIRPORT);
   private static final long TAG = 7L;
@@ -385,17 +386,62 @@ class FlightConsumerTest {
   }
 
   @Test
-  void unresolvablePayloadTypeIsRejectedAsFlightFault() throws Exception {
+  void unresolvablePayloadTypeParksAsInternalSoAReplayAfterRedeployRecoversIt() throws Exception {
     Flight<Contact> f = flight("contact", 0);
     Flight<Contact> unknownType = new Flight<>(f.flightId(), AIRPORT, "contact", f.domainRef(),
-        null, 0, 0, f.correlationId(), "com.example.NoSuchPayload", f.payload());
+        null, 0, 0, f.correlationId(), "com.example.RenamedPayload", f.payload());
 
     consumer.onMessage(message(unknownType), channel);
 
-    assertRecord(onlyRecord(), RecordType.RECORD, Outcome.INCIDENT, Disposition.TERMINAL,
-        IncidentCategory.FLIGHT_FAULT, null);
+    FlightRecord r = onlyRecord();
+    assertRecord(r, RecordType.RECORD, Outcome.INCIDENT, Disposition.PARKED,
+        IncidentCategory.INTERNAL, null);
+    Flight<JsonNode> parked = published(Q.parked(), null);
+    assertEquals(f.flightId(), parked.flightId());
+    assertEquals("com.example.RenamedPayload", parked.payloadType()); // kept for the replay
+    ArgumentCaptor<FlightReportMessage> report = ArgumentCaptor.forClass(FlightReportMessage.class);
+    verify(publisher).publish(eq(QueueNames.tower()), report.capture(), isNull());
+    assertEquals(FlightConsumer.PAYLOAD_TYPE_UNRESOLVED, report.getValue().evidenceMessageKey());
     verifyNoInteractions(clearance, pilot, reporter);
     assertAckedOnce();
+  }
+
+  @Test
+  void payloadJsonThatWontConvertToItsTypeIsRejectedAsFlightFault() throws Exception {
+    Flight<Contact> f = flight("contact", 0);
+    Flight<Object> wrongShape = new Flight<>(f.flightId(), AIRPORT, "contact", f.domainRef(),
+        null, 0, 0, f.correlationId(), Contact.class.getName(), List.of(1, 2));
+
+    consumer.onMessage(message(wrongShape), channel);
+
+    assertRecord(onlyRecord(), RecordType.RECORD, Outcome.INCIDENT, Disposition.TERMINAL,
+        IncidentCategory.FLIGHT_FAULT, null);
+    verifyNotPublished(Q.parked());
+    verifyNoInteractions(clearance, pilot, reporter);
+    assertAckedOnce();
+  }
+
+  @Test
+  void anEnvelopeForAnotherAirportOrWithoutOneParksRawAndAcks() throws Exception {
+    Flight<Contact> f = flight("contact", 0);
+    Flight<Contact> otherAirport = new Flight<>(f.flightId(), "mail:acme", "contact", null, null,
+        0, 0, "abc123", Contact.class.getName(), f.payload());
+    Message foreign = message(otherAirport);
+    // A host mapper with snake_case naming: every envelope field reads as null.
+    Message snakeCase = new Message(("{\"flight_id\":\"" + f.flightId() + "\",\"airport_id\":\""
+        + AIRPORT + "\",\"gate_id\":\"contact\",\"payload_type\":\"" + Contact.class.getName()
+        + "\",\"payload\":{\"email\":\"a@acme.test\"}}").getBytes(), new MessageProperties());
+
+    consumer.onMessage(foreign, channel);
+    consumer.onMessage(snakeCase, channel);
+
+    verify(rabbitTemplate).send("", Q.parked(), foreign);
+    verify(rabbitTemplate).send("", Q.parked(), snakeCase);
+    verify(channel).basicAck(TAG, false);
+    verify(channel).basicAck(0L, false);
+    verifyNoMoreInteractions(channel);
+    assertTrue(records.isEmpty(), "nothing trustworthy to account it against");
+    verifyNoInteractions(publisher, clearance, pilot, reporter);
   }
 
   @Test

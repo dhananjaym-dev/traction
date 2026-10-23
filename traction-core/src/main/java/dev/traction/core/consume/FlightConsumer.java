@@ -38,7 +38,8 @@ import org.springframework.util.ClassUtils;
  * <p>Invariant: every delivery settles exactly once, by ack (after any confirmed republish /
  * hold / park) or by nack-requeue. Deliberate deferrals republish a fresh message to the runway
  * tail and ack, so the runway's delivery limit only counts genuine crashes. A step that throws
- * before the delivery settled lands in the catch-all: record INTERNAL, park, ack. Streaks and
+ * before the delivery settled lands in the catch-all: record INTERNAL, park, ack. A message that
+ * does not decode, or whose envelope is not a flight for this airport, parks raw. Streaks and
  * ground stops are the control plane's job; this loop only reports, and pauses its own airport
  * on AIRPORT_FAULT so the runway is not burned during the round trip.
  *
@@ -62,6 +63,9 @@ public class FlightConsumer implements ChannelAwareMessageListener {
   static final long MAX_DELAY_SLEEP_MS = 10 * 60 * 1000L;
   /** Total unacked ground-delay sleep, safely under the broker's 30 min consumer timeout. */
   static final long MAX_TOTAL_DELAY_MS = 25 * 60 * 1000L;
+
+  /** Evidence message key of a flight parked because its {@code payloadType} does not load here. */
+  public static final String PAYLOAD_TYPE_UNRESOLVED = "PAYLOAD_TYPE_UNRESOLVED";
 
   private static final TypeReference<Flight<JsonNode>> WIRE_FLIGHT = new TypeReference<>() { };
 
@@ -116,10 +120,13 @@ public class FlightConsumer implements ChannelAwareMessageListener {
     try {
       flight = objectMapper.readValue(message.getBody(), WIRE_FLIGHT);
     } catch (Exception e) {
-      log.error("airport {}: undeserializable message; parking it raw", airportId, e);
-      // Plain template: this is the raw Message, and no safer disposition exists if it fails.
-      rabbitTemplate.send("", names.parked(), message);
-      channel.basicAck(tag, false);
+      parkRaw(message, channel, tag, "undeserializable message", e);
+      return;
+    }
+    String envelopeProblem = envelopeProblem(flight);
+    if (envelopeProblem != null) {
+      // Nothing about this flight can be trusted (not its scope, not its type): park it as it came.
+      parkRaw(message, channel, tag, envelopeProblem + " (flight " + flight.flightId() + ")", null);
       return;
     }
 
@@ -177,12 +184,23 @@ public class FlightConsumer implements ChannelAwareMessageListener {
       return;
     }
 
-    // 4. Payload: a payload that cannot become its stamped type is this flight's fault. Checked
-    // before clearance so a rejected flight never burns a slot.
+    // 4. Payload, before clearance so a rejected or parked flight never burns a slot. A stamped
+    // type this deploy cannot load (renamed, moved, deleted class) is not the flight's fault: it
+    // parks, and a replay after the redeploy recovers it. JSON that won't become the loaded type
+    // is the flight's fault: rejected.
     Object payload;
     try {
       payload = toPayload(flight);
-    } catch (Exception | LinkageError e) {
+    } catch (ClassNotFoundException | LinkageError unresolved) {
+      FlightReport.Incident parked = (FlightReport.Incident) FlightReport.incident(
+          IncidentCategory.INTERNAL, new Evidence(unresolved.getClass().getSimpleName(),
+              PAYLOAD_TYPE_UNRESOLVED, flight.payloadType()));
+      logFailure(Disposition.PARKED, parked, flight, unresolved);
+      reportEmitter.emitRecord(flight, parked, Disposition.PARKED);
+      confirmedPublisher.publish(names.parked(), flight, null);
+      ack(channel, tag, settled);
+      return;
+    } catch (Exception e) {
       Evidence cause = Evidence.from(e);
       FlightReport rejected = FlightReport.incident(IncidentCategory.FLIGHT_FAULT,
           new Evidence(cause.code(), "payload-unreadable", cause.excerpt()));
@@ -382,14 +400,48 @@ public class FlightConsumer implements ChannelAwareMessageListener {
     channel.basicAck(tag, false);
   }
 
+  /** Resolution failures surface as {@code ClassNotFoundException} / {@code LinkageError}. */
   private Object toPayload(Flight<JsonNode> flight) throws Exception {
-    String type = flight.payloadType();
-    if (type == null || type.isBlank()) {
-      throw new IllegalArgumentException("flight carries no payloadType");
-    }
-    Class<?> payloadClass = ClassUtils.forName(type, classLoader);
+    Class<?> payloadClass = ClassUtils.forName(flight.payloadType(), classLoader);
     JsonNode node = flight.payload();
     return node == null ? null : objectMapper.treeToValue(node, payloadClass);
+  }
+
+  /**
+   * Why this envelope cannot be flown here, or null when it can: it must carry a flight id, this
+   * consumer's airport, a gate and a payload type. A failing envelope is never acked away.
+   */
+  private String envelopeProblem(Flight<JsonNode> flight) {
+    if (flight == null) {
+      return "empty envelope";
+    }
+    if (flight.flightId() == null) {
+      return "envelope has no flightId";
+    }
+    if (!airportId.equals(flight.airportId())) {
+      return "envelope airportId '" + flight.airportId() + "' is not this airport";
+    }
+    if (flight.gateId() == null || flight.gateId().isBlank()) {
+      return "envelope has no gateId";
+    }
+    if (flight.payloadType() == null || flight.payloadType().isBlank()) {
+      return "envelope has no payloadType";
+    }
+    return null;
+  }
+
+  /**
+   * The uninterpretable-message path: the raw message parks as it came (category INTERNAL,
+   * disposition PARKED) and is acked. No record is emitted: nothing in it can be trusted to
+   * account it against. Plain template: this is the raw Message, and no safer disposition exists
+   * if it fails.
+   */
+  private void parkRaw(Message message, Channel channel, long tag, String why, Exception cause)
+      throws Exception {
+    log.error("flight-failure disposition=PARKED airport={} category=INTERNAL {}; parking it raw",
+        airportId, why, cause);
+    rabbitTemplate.send("", names.parked(), message);
+    channel.basicAck(tag, false);
   }
 
   /** The gate's slot cost; 1 for a flight whose gate is not (or no longer) declared. */

@@ -1,6 +1,8 @@
 package dev.traction.core.config;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import dev.traction.core.api.AirportSpec;
 import dev.traction.core.api.CharterDesk;
 import dev.traction.core.api.FlightEventHook;
@@ -88,14 +90,25 @@ public class TractionAutoConfiguration {
   }
 
   /**
-   * The wire-format mapper: a copy of the application's ObjectMapper (keeps its modules, so
-   * payload types serialize) that Traction owns. The template's converter wraps it, and the
-   * flight consumer reads and converts payloads with it, so both ends share one format. Not an
-   * autowire candidate, so the application's {@code ObjectMapper} injection points are unaffected.
+   * The wire-format mapper, owned by Traction and independent of the application's ObjectMapper:
+   * Jackson defaults (default property naming), the modules on the classpath
+   * ({@code findAndRegisterModules}, so java.time and friends serialize), unknown properties
+   * ignored, dates as ISO strings. Every service on an airport therefore writes and reads the same
+   * envelope whatever its own Jackson settings (a host's snake_case naming can no longer blank the
+   * envelope fields). The template's converter wraps it; the flight consumer, the tower listener,
+   * replay and discard read with it. Not an autowire candidate, so the application's
+   * {@code ObjectMapper} injection points are unaffected.
    */
   @Bean(defaultCandidate = false)
-  public ObjectMapper tractionObjectMapper(ObjectMapper objectMapper) {
-    return objectMapper.copy();
+  public ObjectMapper tractionObjectMapper() {
+    return wireObjectMapper();
+  }
+
+  /** A fresh Traction wire mapper (see {@link #tractionObjectMapper()}). */
+  public static ObjectMapper wireObjectMapper() {
+    return new ObjectMapper().findAndRegisterModules()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   }
 
   /**

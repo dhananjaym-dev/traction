@@ -42,7 +42,9 @@ flowchart LR
 
 1. **Dispatch.** `Tower.dispatch` checks the airport and gate exist (an unknown one throws
    `IllegalArgumentException`, nothing queued), mints a `flightId`, stamps the payload's class,
-   and publishes to the airport's runway.
+   and publishes to the airport's runway. Before any check below, a message that isn't a
+   flight for this airport (no `flightId`, `gateId` or `payloadType`, or another airport's id)
+   is parked as it came.
 2. **Airport status.** Stopped? The flight goes back to the runway tail and this consumer
    pauses itself. It resumes when the control plane broadcasts a reopen.
 3. **Ground delay.** If the vendor recently throttled you, the consumer sleeps it out.
@@ -50,7 +52,9 @@ flowchart LR
    `PARKED`) while other gates keep landing.
 5. **Charter abort.** A flight of an aborted charter settles `SKIPPED CHARTER_ABORTED` and is
    acked without flying: counted, burning no slot, and not kept.
-6. **Payload.** JSON that won't convert to the stamped class is a `FLIGHT_FAULT`.
+6. **Payload.** JSON that won't convert to the stamped class is a `FLIGHT_FAULT`. A stamped
+   class this deploy can't load (renamed, moved, deleted) is not the flight's fault: it parks
+   as `INTERNAL`, and a replay after the next deploy recovers it.
 7. **Clearance.** One slot (or the gate's `slotCost`) from the airport's token bucket in Redis.
    Short waits sleep; long waits become a ground delay. If Redis can't answer, the flight is
    deferred, never flown unpaced.

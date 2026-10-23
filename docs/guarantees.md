@@ -36,6 +36,13 @@ dispatches of the same contact are two flights.
 `INCIDENT` and disposition `RETRYING`, they reach your `FlightEventHook` and the incident list,
 and they are **never counted**. Only `RECORD` rows count.
 
+**Unreadable is not rejected.** Only a payload whose JSON won't convert to its stamped class is
+rejected (`FLIGHT_FAULT`). A stamped class that doesn't load in this deploy (renamed, moved,
+deleted) parks the flight as `INTERNAL`, so a replay after the next deploy recovers it. A message
+that isn't a flight for its airport at all is parked as it came, with no row. Traction reads the
+envelope with its own JSON mapper (Jackson defaults), whatever each service's `ObjectMapper`
+settings.
+
 ## The charter books balance
 
 *For a bulk run, the counts add up to what you said you'd send.*
