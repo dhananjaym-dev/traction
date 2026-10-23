@@ -1,12 +1,13 @@
 # Everything runs inside this compose network. AMQP (5672) and Redis (6379) are internal only and
 # never published, so the demo can neither reach nor collide with a broker or store on the host.
-# Published: demo-app :8080 (dashboard http://localhost:8080/traction), acme-vendor :9090, and the
-# RabbitMQ management UI at http://localhost:15673 (guest/guest; RABBIT_MGMT_PORT overrides).
+# Published on loopback only (127.0.0.1, never the LAN): demo-app :8080 (dashboard
+# http://localhost:8080/traction), acme-vendor :9090, and the RabbitMQ management UI at
+# http://localhost:15673 (guest/guest; RABBIT_MGMT_PORT overrides).
 services:
   rabbitmq:
     image: rabbitmq:3.13-management
     ports:
-      - "${RABBIT_MGMT_PORT:-15673}:15672"
+      - "127.0.0.1:${RABBIT_MGMT_PORT:-15673}:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -27,7 +28,7 @@ services:
       context: .
       dockerfile: acme-vendor/Dockerfile
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9090/mode"]
       interval: 3s
@@ -40,7 +41,7 @@ services:
       context: .
       dockerfile: demo-app/Dockerfile
     ports:
-      - "8080:8080"   # dashboard at http://localhost:8080/traction
+      - "127.0.0.1:8080:8080"   # dashboard at http://localhost:8080/traction
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_DATA_REDIS_HOST: redis

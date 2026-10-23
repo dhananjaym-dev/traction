@@ -29,7 +29,7 @@ public class NaiveTopology {
     @Bean
     Declarables naiveContactSyncTopology() {
         Queue work = QueueBuilder.durable(QUEUE).quorum()
-                .withArgument("x-delivery-limit", 3)            // the broker dead-letters on the 4th redelivery
+                .withArgument("x-delivery-limit", 3)            // dead-letters after 3 redeliveries (4 deliveries in all)
                 .deadLetterExchange(DLX)
                 .deadLetterRoutingKey(DLQ)
                 .build();
