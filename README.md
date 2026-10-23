@@ -75,7 +75,7 @@ You need Docker. The images build with Gradle inside Docker, so no JDK is needed
 scripts use bash, curl and jq.
 
 ```bash
-git clone <this repo> traction && cd traction
+git clone https://github.com/dhananjaym-dev/traction.git && cd traction
 docker compose up -d --build --wait
 ./demo/scenario-naive.sh      # a plain @RabbitListener with retry limit + DLQ, token expired
 ./demo/scenario-traction.sh   # the same 1,000 messages through Traction
@@ -147,6 +147,10 @@ Reference implementation. The concepts come from a production system; this proje
 runnable reference: read it, run it, adapt it. The admin API has no authentication in v1 (see
 [operations](docs/operations.md#securing-it-in-production)). A packaged library may follow,
 based on interest.
+
+## License
+
+[Apache License 2.0](LICENSE).
 
 — *[the problem](docs/the-problem.md) · [concepts & glossary](docs/concepts.md) ·
 [life of a flight](docs/life-of-a-flight.md) · [guarantees](docs/guarantees.md) ·
