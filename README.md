@@ -41,10 +41,14 @@ AirportSpec crmAcme() {
             .reporter(this::report);            // your failure classification
 }
 
-// 2. Send work from anywhere in your system.
-tower.dispatch("crm:acme", "contact-sync", contact);
+// 2. Send work from anywhere in your system. The domainRef (contact.id()) is the business id
+//    your pilot stays idempotent on: delivery is at least once.
+tower.dispatch("crm:acme", "contact-sync", contact, new DispatchOptions(contact.id(), null));
 
 // 3. Do the work. A pilot lands one flight; it never touches the broker.
+private static final Map<String, String> PATHS =   // gate -> Acme endpoint
+        Map.of("contact-sync", "/contacts", "company-sync", "/companies");
+
 void land(Flight<?> flight) {
     acme.upsert(PATHS.get(flight.gateId()), flight.payload());
 }
@@ -113,7 +117,8 @@ your machine, so the demo won't touch a Redis or RabbitMQ you may already run lo
 - **No lost work.** Every flight ends **Landed**, **Skipped**, or **Incident**. A parked flight
   is recoverable, never counted as failed: replay it to the runway, or discard it, explicitly.
 - **Bulk runs (charters).** Dispatch a 50k run as one charter and get progress, completion,
-  abort, and an admission policy (one open run per gate).
+  abort, and an optional admission policy (off by default; `.charterConcurrency(PER_KEY)` allows
+  one open run per gate).
 - **Incident summaries with evidence.** Which gate is failing, with what category and a bounded
   excerpt, from Traction's own state in Redis. No logging stack required.
 - **Hooks, not opinions.** Ground stops, incidents and charter events fire a `NotifyHook`;

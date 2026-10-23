@@ -44,7 +44,7 @@ Without `X-Actor`, the abort is recorded as `anonymous`.
 
 ### Discard parked flights
 
-This is the only action that destroys work, so it requires a confirm token:
+This is the only action that drops work Traction still holds, so it requires a confirm token:
 
 ```bash
 curl -X POST http://localhost:8080/traction/api/airports/crm:acme/discardParked \
@@ -58,7 +58,7 @@ curl -X POST http://localhost:8080/traction/api/airports/crm:acme/discardParked 
 | reopen | `{"airportId":"crm:acme","reopened":true}` (`false` = already open) | 404 unknown airport or gate |
 | replayParked | `{"airportId":"crm:acme","replayed":50,"skipped":0}` | 404; 409 a replay or discard is already running; 500 the broker didn't confirm a republish |
 | discardParked | `{"airportId":"crm:acme","dropped":7}` | 400 token missing or wrong (nothing dropped); 404; 409 |
-| abort | `{"charterRef":"…","aborted":true,"actor":"dana"}` | 400 malformed id; 404 no such charter |
+| abort | `{"charterRef":"…","aborted":true,"actor":"dana"}` | 400 malformed id; 404 no such charter, or it already completed |
 
 Errors come back as `{"error":"…"}`.
 
