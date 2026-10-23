@@ -21,10 +21,9 @@ else BOLD=''; DIM=''; GREEN=''; RED=''; OFF=''; fi
 
 banner() { printf '\n%s== %s ==%s\n' "$BOLD" "$*" "$OFF"; }
 say()    { printf '  %s\n' "$*"; }
-# Prints a command the way a reader would type it, then runs it and prints its output.
-run()    { printf '  %s$ %s%s\n' "$DIM" "$*" "$OFF"; "$@" | indent; }
-# Same, for a pipeline given as one string.
-runs()   { printf '  %s$ %s%s\n' "$DIM" "$1" "$OFF"; eval "$1" | indent; }
+# Prints <command> exactly as it runs (copy-pasteable into bash or zsh), runs it, and prints its
+# output indented. The output is also left in $OUT.
+runs()   { printf '  %s$ %s%s\n' "$DIM" "$1" "$OFF"; OUT=$(eval "$1"); printf '%s' "$OUT" | indent; }
 indent() { sed 's/^/  /'; printf '\n'; }
 
 fail() { printf '%sFAIL%s %s\n' "$RED" "$OFF" "$*" >&2; exit 1; }
@@ -176,8 +175,7 @@ reset() {
   say "vendor healthy, queues empty, traction state cleared, airports consuming"
 }
 
-# Prints the vendor flip as the curl a reader would type, then runs it.
+# Flips the vendor's mode for one endpoint (or all), printing the exact curl that runs.
 flip() { # <endpoint|all> <mode>
-  printf '  %s$ curl -X POST %s/mode -d '"'"'{"endpoint":"%s","mode":"%s"}'"'"'%s\n' "$DIM" "$ACME" "$1" "$2" "$OFF"
-  vendor_mode "$1" "$2" | indent
+  runs "curl -fsS -X POST '$ACME/mode' -H 'Content-Type: application/json' -d '{\"endpoint\":\"$1\",\"mode\":\"$2\"}'"
 }

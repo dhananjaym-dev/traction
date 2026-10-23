@@ -13,12 +13,12 @@ banner "2. the governed consumer (Traction airport $AIRPORT)"
 say "Acme's API token has just expired..."
 flip contacts token_expired
 say "...and the same $COUNT contact syncs arrive."
-run curl -fsS -X POST "$APP/seed/contacts?count=$COUNT"
+runs "curl -fsS -X POST '$APP/seed/contacts?count=$COUNT'"
 
 banner "the first AIRPORT_FAULT ground-stops the airport"
 grounded() { [[ "$(airport_status "$AIRPORT")" == GROUND_STOP ]]; }
 wait_until 30 "$AIRPORT to ground-stop" grounded
-runs "curl -fsS $API/airports/$AIRPORT | jq -c '{id, status, reason, detail}'"
+runs "curl -fsS '$API/airports/$AIRPORT' | jq -c '{id, status, reason, detail}'"
 
 waiting() {
   local b; b=$(backlog "$AIRPORT")
@@ -39,7 +39,7 @@ assert_eq "$(log_count 'traction.notify type=' "$since")" 1 "notifications of an
 
 banner "fix the token, then one curl"
 flip contacts healthy
-run curl -fsS -X POST "$API/airports/$AIRPORT/reopen"
+runs "curl -fsS -X POST '$API/airports/$AIRPORT/reopen'"
 
 banner "everything lands (paced at the airport's 20/s slot limit)"
 landed_all() {

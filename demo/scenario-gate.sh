@@ -14,14 +14,14 @@ banner "3. one gate breaks, the airport keeps flying"
 say "Acme changes its company API contract (contacts are fine)..."
 flip companies contract_break
 say "...while $COMPANIES company syncs and $CONTACTS contact syncs arrive back to back."
-run curl -fsS -X POST "$APP/seed/companies?count=$COMPANIES"
-run curl -fsS -X POST "$APP/seed/contacts?count=$CONTACTS"
+runs "curl -fsS -X POST '$APP/seed/companies?count=$COMPANIES'"
+runs "curl -fsS -X POST '$APP/seed/contacts?count=$CONTACTS'"
 
 banner "the company-sync gate ground-stops after the GATE_FAULT streak"
 gate_grounded() { [[ "$(gate_status "$AIRPORT" company-sync)" == GROUND_STOP ]]; }
 wait_until 60 "gate company-sync to ground-stop" gate_grounded
 contacts_at_stop=$(vendor_stat contacts ok)
-runs "curl -fsS $API/airports/$AIRPORT | jq -c '{status, gates: [.gates[] | {id, status, reason, detail}]}'"
+runs "curl -fsS '$API/airports/$AIRPORT' | jq -c '{status, gates: [.gates[] | {id, status, reason, detail}]}'"
 assert_eq "$(gate_status "$AIRPORT" company-sync)" GROUND_STOP "gate company-sync"
 assert_eq "$(gate_status "$AIRPORT" contact-sync)" OPEN "gate contact-sync"
 assert_eq "$(airport_status "$AIRPORT")" OPEN "airport $AIRPORT"
@@ -43,8 +43,8 @@ notify_lines GROUND_STOP "$since"
 
 banner "fix the contract, reopen the gate, replay what parked"
 flip companies healthy
-run curl -fsS -X POST "$API/airports/$AIRPORT/gates/company-sync/reopen"
-run curl -fsS -X POST "$API/airports/$AIRPORT/replayParked"
+runs "curl -fsS -X POST '$API/airports/$AIRPORT/gates/company-sync/reopen'"
+runs "curl -fsS -X POST '$API/airports/$AIRPORT/replayParked'"
 
 companies_landed() {
   local c p b; c=$(vendor_stat companies ok); p=$(depth "tr.$AIRPORT.parked"); b=$(backlog "$AIRPORT")
