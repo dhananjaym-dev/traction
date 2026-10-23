@@ -43,7 +43,7 @@ public class CrmAirportConfig {
     @Bean
     AirportSpec crmAcme() {
         return AirportSpec.of(AIRPORT)
-                .slots(60, Duration.ofMinutes(1))   // the shared rate limit
+                .slots(20, Duration.ofSeconds(1))   // the shared rate limit
                 .gate(CONTACT_SYNC)                 // a gate = one independently stoppable work type
                 .gate(COMPANY_SYNC)
                 .pilot(this::land)                  // your work

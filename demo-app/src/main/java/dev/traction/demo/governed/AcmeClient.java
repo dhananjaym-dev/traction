@@ -37,7 +37,7 @@ public class AcmeClient {
 
     private final RestClient http;
 
-    public AcmeClient(@Value("${acme.base-url:http://localhost:9090}") String baseUrl) {
+    public AcmeClient(@Value("${acme.base-url:http://acme-vendor:9090}") String baseUrl) {
         JdkClientHttpRequestFactory requests =
                 new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(TIMEOUT).build());
         requests.setReadTimeout(TIMEOUT);

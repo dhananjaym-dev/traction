@@ -1,0 +1,11 @@
+# Build context = repo root; only sources and the Gradle wrapper are needed.
+**/build/
+.gradle/
+.git/
+.superpowers/
+.memsearch/
+docs/
+demo/
+.idea/
+.vscode/
+**/.DS_Store

@@ -4,22 +4,23 @@ server:
 spring:
   application:
     name: demo-app
-  # Overridable by env: SPRING_RABBITMQ_HOST, SPRING_DATA_REDIS_HOST (compose sets them).
+  # Compose service names: the demo runs entirely inside docker compose and never reaches host
+  # services. Overridable by env: SPRING_RABBITMQ_HOST, SPRING_DATA_REDIS_HOST.
   rabbitmq:
-    host: localhost
+    host: rabbitmq
     port: 5672
   data:
     redis:
-      host: localhost
+      host: redis
       port: 6379
 
 traction:
   control-plane:
     enabled: true   # this service is also the control plane: admin API + dashboard at /traction
 
-# The vendor simulator (env ACME_BASE_URL; compose sets http://acme-vendor:9090).
+# The vendor simulator, by its compose service name (env ACME_BASE_URL overrides).
 acme:
-  base-url: http://localhost:9090
+  base-url: http://acme-vendor:9090
 
 logging:
   pattern:
