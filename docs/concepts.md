@@ -53,7 +53,7 @@ rejecting one flight stops nothing.
 | **Reopen** | Resume a stopped airport or gate (always explicit) | admin API |
 | **Replay / discard** | Send parked flights back to the runway / drop them for good | admin API |
 | **Charter** | A bulk run, tracked to completion | `CharterDesk.open(...)` |
-| **Skip window** | After an abort, the run's remaining flights settle as skipped (7 days) | `CHARTER_ABORTED` |
+| **Skip window** | After an abort, the run's remaining flights are counted skipped and dropped, not kept (7 days) | `CHARTER_ABORTED` |
 | **Category** | The level a failure breaks | `IncidentCategory` |
 | **Evidence** | What went wrong, bounded and PII-free (you strip PII) | `Evidence.from(t)` |
 | **Streak** | N distinct records failing the same way in a window | 3 `GATE_FAULT`s, or 5 `FLIGHT_FAULT`/`INTERNAL`, in 5 min |

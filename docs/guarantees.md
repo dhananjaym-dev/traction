@@ -25,7 +25,8 @@ dispatches of the same contact are two flights.
 | Outcome | Disposition | Means |
 |---|---|---|
 | `LANDED` | `TERMINAL` | Done |
-| `SKIPPED` | `TERMINAL` or `PARKED` | Deliberately not flown (aborted charter, or a stopped gate's flight, parked) |
+| `SKIPPED` | `TERMINAL` | Deliberately not flown and not kept (a flight of an aborted charter) |
+| `SKIPPED` | `PARKED` | Not flown yet: a stopped gate's flight, parked for replay |
 | `INCIDENT` | `TERMINAL` | Rejected (`FLIGHT_FAULT`): no retry as-is |
 | `INCIDENT` | `PARKED` | Waiting for a human; recoverable, **never counted as failed** |
 | `INCIDENT` | `RETRYING` | Still in progress (an `INTERIM` row) |
@@ -52,18 +53,24 @@ landed + rejected + skipped + parked + discarded == expected
   **Discard** moves it from `parked` to `discarded`.
 - **Completion fires once**, on a latch, the moment the books fill: `CHARTER_COMPLETED` with
   `source=LATCH`.
-- **After an abort**, the run's remaining flights settle `SKIPPED` (the skip window lasts 7
-  days; an abort is not a purge). Completion fires when those skipped rows fill the books, with
-  `source=ABORT`. Until then the charter reads `OPEN` with `abortedBy` set.
+- **After an abort**, each of the run's remaining flights is counted `SKIPPED` as it reaches a
+  consumer, and then acked without flying: it is accounted for, but not kept, and nothing can
+  replay it. The skip window lasts 7 days, so late flights of the run are skipped too.
+  Completion fires when those skipped rows fill the books, with `source=ABORT`. Until then the
+  charter reads `OPEN` with `abortedBy` set. An aborted run can't be resumed: to redo the
+  skipped work, re-dispatch it from your source as a new charter.
 - **Backstop:** a charter with no progress for 24 hours on a drained gate is closed by the
   hourly sweep with `source=SWEEP`. SWEEP means the books never added up and it was closed
   anyway.
 
 ## Discard is the only destructive action
 
-*Everything else can be undone or retried. Discard can't.*
+*Discard is the one action that drops work Traction still holds. Abort skips work on purpose,
+and counts it.*
 
-Reopen, replay and abort lose nothing. `discardParked` drops an airport's parked flights for
+Reopen and replay lose nothing. Abort is deliberate and accounted: the run's remaining flights
+settle `SKIPPED` and are counted, but are not kept, so re-dispatch from the source to redo
+them. `discardParked` drops flights Traction is still holding (an airport's parked queue) for
 good, so it requires the body `{"confirm":"discard-all"}`; anything else is an HTTP 400 and
 drops nothing. Discarded flights that belong to a charter are tallied as `discarded`. See the
 [runbook](operations.md#discard-parked-flights).

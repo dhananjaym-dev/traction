@@ -33,12 +33,14 @@ curl -X POST http://localhost:8080/traction/api/airports/crm:acme/gates/company-
 # Replay every parked flight of an airport back to its runway
 curl -X POST http://localhost:8080/traction/api/airports/crm:acme/replayParked
 
-# Abort a charter; X-Actor is optional and recorded as abortedBy (default "anonymous")
+# Abort a charter: its remaining flights are counted SKIPPED and dropped, not kept (no replay;
+# re-dispatch from your source to redo them). X-Actor is optional, recorded as abortedBy
 curl -X POST -H 'X-Actor: dana' \
   http://localhost:8080/traction/api/charters/mail:acme/welcome/run-1792774953/abort
 ```
 
 The charter path is the `charterRef` (`airportId/gateId/charterId`) spelled as three segments.
+Without `X-Actor`, the abort is recorded as `anonymous`.
 
 ### Discard parked flights
 

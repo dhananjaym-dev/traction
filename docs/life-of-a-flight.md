@@ -48,8 +48,8 @@ flowchart LR
 3. **Ground delay.** If the vendor recently throttled you, the consumer sleeps it out.
 4. **Gate status.** A stopped gate parks its flights (`SKIPPED GATE_GROUNDED`, disposition
    `PARKED`) while other gates keep landing.
-5. **Charter abort.** A flight of an aborted charter settles `SKIPPED CHARTER_ABORTED`, burning
-   no slot.
+5. **Charter abort.** A flight of an aborted charter settles `SKIPPED CHARTER_ABORTED` and is
+   acked without flying: counted, burning no slot, and not kept.
 6. **Payload.** JSON that won't convert to the stamped class is a `FLIGHT_FAULT`.
 7. **Clearance.** One slot (or the gate's `slotCost`) from the airport's token bucket in Redis.
    Short waits sleep; long waits become a ground delay. If Redis can't answer, the flight is
