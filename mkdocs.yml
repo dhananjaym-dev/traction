@@ -1,0 +1,26 @@
+site_name: Traction
+site_description: Per-gate, per-charter circuit breaking and a drain-and-resume runbook for RabbitMQ consumers, built on Spring AMQP.
+site_url: https://dhananjaym-dev.github.io/traction/
+repo_url: https://github.com/dhananjaym-dev/traction
+
+theme:
+  name: null
+  custom_dir: site-theme
+
+exclude_docs: |
+  superpowers/
+
+markdown_extensions:
+  - toc:
+      permalink: false
+  - tables
+  - fenced_code
+
+nav:
+  - Article: index.md
+  - The problem: the-problem.md
+  - Concepts: concepts.md
+  - Life of a flight: life-of-a-flight.md
+  - Guarantees: guarantees.md
+  - Operations: operations.md
+  - Why not Temporal: why-not-temporal.md

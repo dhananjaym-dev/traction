@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "head.html" %}
+</head>
+<body class="docs">
+<header class="topnav">
+  <a class="brand" href="{{ nav.homepage.url | url if nav and nav.homepage else base_url ~ '/' }}">{{ config.site_name }}</a>
+  <nav aria-label="Primary">
+  {%- for item in nav %}
+    <a href="{{ item.url | url }}"{% if item.active %} class="active" aria-current="page"{% endif %}>{{ item.title }}</a>
+  {%- endfor %}
+    <a href="{{ config.repo_url }}">GitHub</a>
+  </nav>
+</header>
+<main class="content">
+{%- block content %}
+  {{ page.content }}
+{%- endblock %}
+</main>
+<footer class="footer">
+  <a href="{{ config.repo_url }}">{{ config.site_name }} on GitHub</a>
+</footer>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  const blocks = document.querySelectorAll("pre > code.language-mermaid");
+  blocks.forEach((code) => {
+    const div = document.createElement("div");
+    div.className = "mermaid";
+    div.textContent = code.textContent;
+    code.parentElement.replaceWith(div);
+  });
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
+  if (blocks.length) { mermaid.run({ querySelector: ".mermaid" }); }
+</script>
+</body>
+</html>

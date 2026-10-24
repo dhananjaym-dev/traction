@@ -50,4 +50,4 @@ dependency.
 
 Traction is deliberately not a worse durable runtime: it has no workflows and no step state,
 and it tracks no sequence across flights beyond a [charter](concepts.md#glossary)'s counts.
-Back to the [README](../README.md).
+Back to the [README](https://github.com/dhananjaym-dev/traction#readme).

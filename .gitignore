@@ -21,3 +21,6 @@ out/
 
 # Local planning docs
 docs/superpowers/
+
+# Site build output
+site/
