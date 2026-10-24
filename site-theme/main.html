@@ -7,9 +7,9 @@
 <header class="topnav">
   <a class="brand" href="{{ nav.homepage.url | url if nav and nav.homepage else base_url ~ '/' }}">{{ config.site_name }}</a>
   <nav aria-label="Primary">
-  {%- for item in nav %}
-    <a href="{{ item.url | url }}"{% if item.active %} class="active" aria-current="page"{% endif %}>{{ item.title }}</a>
-  {%- endfor %}
+  {%- for item in nav %}{% if not item.is_homepage %}
+    <a href="{{ item.url | url }}"{% if item.active %} class="active" aria-current="page"{% endif %}>{{ item.title | lower | replace('temporal', 'Temporal') }}</a>
+  {%- endif %}{% endfor %}
     <a href="{{ config.repo_url }}">GitHub</a>
   </nav>
 </header>
@@ -22,17 +22,32 @@
   <a href="{{ config.repo_url }}">{{ config.site_name }} on GitHub</a>
 </footer>
 <script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
   const blocks = document.querySelectorAll("pre > code.language-mermaid");
-  blocks.forEach((code) => {
-    const div = document.createElement("div");
-    div.className = "mermaid";
-    div.textContent = code.textContent;
-    code.parentElement.replaceWith(div);
-  });
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
-  if (blocks.length) { mermaid.run({ querySelector: ".mermaid" }); }
+  if (blocks.length) {
+    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+    blocks.forEach((code) => {
+      const div = document.createElement("div");
+      div.className = "mermaid";
+      div.textContent = code.textContent;
+      code.parentElement.replaceWith(div);
+    });
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const vars = dark
+      ? { background: "#2b2721", primaryColor: "#3a342a", primaryTextColor: "#f0e9d9", primaryBorderColor: "#d9ad3c",
+          secondaryColor: "#332e25", tertiaryColor: "#27231d", lineColor: "#c4b697", textColor: "#f0e9d9",
+          clusterBkg: "#27231d", clusterBorder: "#6b5f47", edgeLabelBackground: "#2b2721", titleColor: "#f0e9d9" }
+      : { background: "#f4efe4", primaryColor: "#fffdf8", primaryTextColor: "#222222", primaryBorderColor: "#b8921a",
+          secondaryColor: "#faf5e8", tertiaryColor: "#fbf8f0", lineColor: "#6b5d42", textColor: "#222222",
+          clusterBkg: "#fbf8f0", clusterBorder: "#cdbf9c", edgeLabelBackground: "#f4efe4", titleColor: "#222222" };
+    mermaid.initialize({ startOnLoad: false, theme: "base", flowchart: { nodeSpacing: 24, rankSpacing: 28, padding: 6, diagramPadding: 6 }, themeVariables: Object.assign({ fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif" }, vars) });
+    await mermaid.run({ querySelector: ".mermaid" });
+    // Keep diagram text legible: render near natural size and let the box scroll sideways.
+    document.querySelectorAll(".mermaid svg").forEach((svg) => {
+      const w = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal.width : 0;
+      if (w) { svg.style.maxWidth = "none"; svg.style.width = Math.round(w * 0.85) + "px"; }
+      svg.parentElement.tabIndex = 0;
+    });
+  }
 </script>
 </body>
 </html>

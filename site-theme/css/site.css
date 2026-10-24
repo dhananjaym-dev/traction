@@ -1,9 +1,209 @@
-/* Skeleton only; the look is applied in a later task. */
-body { margin: 0; font-family: system-ui, sans-serif; line-height: 1.6; }
-.topnav, .essay-header { display: flex; gap: 1rem; align-items: baseline; padding: 0.75rem 1rem; }
-.topnav nav, .essay-header nav { display: flex; gap: 1rem; flex-wrap: wrap; }
-.content { max-width: 52rem; margin: 0 auto; padding: 1rem; }
-.essay-body { max-width: 40rem; margin: 0 auto; padding: 1rem; }
-.footer { padding: 1rem; text-align: center; }
-pre { overflow-x: auto; }
-img { max-width: 100%; }
+/* Traction Pages: the engineer's-essay look. Warm paper, serif body,
+   small-caps sans labels, amber-tinted code. Dark = the same warmth inverted. */
+
+:root {
+  --bg: #fffdf8;
+  --fg: #222222;
+  --muted: #76674a;
+  --tint: #f4efe4;
+  --accent: #c9a227;
+  --link: #8a5600;
+  --rule: #e6dfcd;
+  --serif: Georgia, 'Iowan Old Style', serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f1c17;
+    --fg: #e9e2d2;
+    --muted: #b5a789;
+    --tint: #2b2721;
+    --accent: #d9ad3c;
+    --link: #e3b455;
+    --rule: #3b362c;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* ---- Top navigation (small-caps sans labels, one line where it fits) ---- */
+
+.topnav, .essay-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 0.75rem;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+}
+.topnav { max-width: 54rem; }
+.essay-header { max-width: 40rem; }
+
+.topnav a, .essay-header a { color: var(--muted); text-decoration: none; }
+.topnav a:hover, .essay-header a:hover { color: var(--fg); text-decoration: underline; }
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg) !important;
+}
+.topnav .brand::after { content: " \2014"; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+
+.topnav nav, .essay-header nav { display: flex; flex: 1 1 0; min-width: 0; flex-wrap: wrap; gap: 0.1rem 0.5rem; }
+.essay-header nav { flex: 0 0 auto; margin-left: auto; }
+
+.topnav nav a { font-variant: small-caps; letter-spacing: 0.03em; font-size: 0.84rem; }
+.topnav nav a:not(:last-child)::after {
+  content: "\00b7";
+  display: inline-block;
+  margin-left: 0.5rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+.topnav nav a.active { color: var(--fg); font-weight: 700; }
+
+/* ---- Page bodies ---- */
+
+.content, .essay-body {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+/* ~70ch measure for prose; code, tables and diagrams may run wider */
+.content > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr) { max-width: 44rem; }
+.essay-body { max-width: 40rem; padding-top: 2.5rem; }
+
+h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.01em; margin: 2.2em 0 0.6em; }
+h1 { font-size: 2rem; margin-top: 0.4em; }
+h2 { font-size: 1.45rem; border-top: 1px solid var(--rule); padding-top: 1.1em; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; font-family: var(--sans); font-variant: small-caps; letter-spacing: 0.06em; color: var(--muted); }
+.essay-body h1 { font-size: 2.4rem; }
+h1 + p em:only-child { color: var(--muted); }
+
+.byline, .essay-body .byline {
+  font-family: var(--sans);
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.4rem 0 1.6rem;
+}
+
+p, ul, ol, blockquote, pre, table { margin: 0 0 1.1em; }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.25em 0; }
+li > ul, li > ol { margin-bottom: 0; }
+
+blockquote {
+  margin-left: 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--muted);
+}
+blockquote > :last-child { margin-bottom: 0; }
+
+hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
+
+/* ---- Code: warm tint, left accent border ---- */
+
+code, pre { font-family: var(--mono); }
+code {
+  font-size: 0.86em;
+  background: var(--tint);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+pre {
+  background: var(--tint);
+  border-left: 3px solid var(--accent);
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+}
+pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+
+/* ---- Tables scroll sideways on phones instead of overflowing the page ---- */
+
+table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  -webkit-overflow-scrolling: touch;
+}
+th, td { padding: 0.45em 0.8em; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+th {
+  font-family: var(--sans);
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+  font-size: 0.9rem;
+  color: var(--muted);
+  border-bottom: 2px solid var(--rule);
+  white-space: nowrap;
+}
+td code { white-space: nowrap; }
+
+/* ---- Mermaid: legible in both schemes, scrolls sideways on phones ---- */
+
+.mermaid {
+  overflow-x: auto;
+  margin: 1.4em 0;
+  padding: 0.75rem;
+  background: var(--tint);
+  border-left: 3px solid var(--accent);
+  text-align: center;
+  -webkit-overflow-scrolling: touch;
+}
+.mermaid svg { height: auto; max-width: none; }
+.mermaid:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+img { max-width: 100%; height: auto; }
+
+.footer {
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2.5rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.footer a { color: var(--muted); }
+
+@media (max-width: 30rem) {
+  body { font-size: 1.0625rem; }
+  h1 { font-size: 1.7rem; }
+  .essay-body h1 { font-size: 2rem; }
+  .essay-body { padding-top: 1.75rem; }
+}
