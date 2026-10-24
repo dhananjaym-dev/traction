@@ -268,7 +268,7 @@ naive:     lost: 1000 · error lines: ~4000 · recovery: manual
 traction:  lost: 0 · notifications: 1 · recovery: one curl
 ```
 
-<!-- dashboard screenshot: task 4 -->
+![The Traction dashboard mid-incident: the company-sync gate is ground-stopped with 50 flights parked, while the contact-sync gate stays open and its queue keeps draining.](assets/dashboard.png)
 
 "Lost" on the naive side means dead-lettered: the messages still exist, but every one of them
 is now someone's manual job. Your numbers will vary with timing; the shape won't, and the
