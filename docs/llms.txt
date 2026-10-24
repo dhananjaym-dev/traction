@@ -1,0 +1,7 @@
+https://dhananjaym-dev.github.io/traction/ — A first-person article on how an expired token turned a well-built queue consumer into a retry storm, why retries treat every failure as the same size, and how scoped containment (Traction) stops the line but keeps the work.
+https://dhananjaym-dev.github.io/traction/the-problem/ — Why one retry policy fails queue consumers: failures come in three sizes (one record, one work type, a whole dependency), and the size decides the right response.
+https://dhananjaym-dev.github.io/traction/concepts/ — Traction's vocabulary: airports, gates and flights as nested, independently stoppable scopes, with a plain-words glossary and the id scheme.
+https://dhananjaym-dev.github.io/traction/life-of-a-flight/ — How one message crosses Traction's data plane and control plane: the checks before each call, the settle paths, and the rules that stop a scope.
+https://dhananjaym-dev.github.io/traction/guarantees/ — What Traction promises, stated precisely: at-least-once delivery, every flight accounted for, balanced charter books, and the known limits of v1.
+https://dhananjaym-dev.github.io/traction/operations/ — The operator's runbook: every action as one curl against the admin API, plus notifications, configuration and a tour of the dashboard.
+https://dhananjaym-dev.github.io/traction/why-not-temporal/ — When a durable-execution runtime such as Temporal is the better choice, and when scoped failure containment on the broker you already run is.

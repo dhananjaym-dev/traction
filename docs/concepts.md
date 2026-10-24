@@ -1,3 +1,7 @@
+---
+description: "Traction's vocabulary: airports, gates and flights as nested, independently stoppable scopes, with a plain-words glossary and the id scheme."
+---
+
 # Concepts & glossary
 
 *Three nested scopes, each one stoppable on its own. Everything else is the machinery around

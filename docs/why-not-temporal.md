@@ -1,3 +1,7 @@
+---
+description: "When a durable-execution runtime such as Temporal is the better choice, and when scoped failure containment on the broker you already run is."
+---
+
 # Why not Temporal?
 
 *Durable-execution runtimes sell a new place to run your code. Traction sells rules for the

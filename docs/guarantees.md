@@ -1,3 +1,7 @@
+---
+description: "What Traction promises, stated precisely: at-least-once delivery, every flight accounted for, balanced charter books, and the known limits of v1."
+---
+
 # Guarantees
 
 *What Traction promises, stated precisely, and where the promises stop.*

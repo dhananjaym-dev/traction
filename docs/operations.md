@@ -1,3 +1,7 @@
+---
+description: "The operator's runbook: every action as one curl against the admin API, plus notifications, configuration and a tour of the dashboard."
+---
+
 # Operations
 
 *Every operator action is one curl. The dashboard only watches.*

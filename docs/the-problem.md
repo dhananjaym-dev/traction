@@ -1,3 +1,7 @@
+---
+description: "Why one retry policy fails queue consumers: failures come in three sizes (one record, one work type, a whole dependency), and the size decides the right response."
+---
+
 # The problem: failures come in three sizes
 
 *A retry policy treats every failure as the same size. They aren't, and the size decides the

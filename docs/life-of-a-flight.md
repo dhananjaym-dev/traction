@@ -1,3 +1,7 @@
+---
+description: "How one message crosses Traction's data plane and control plane: the checks before each call, the settle paths, and the rules that stop a scope."
+---
+
 # The life of a flight
 
 *Your code does two things: the work and the verdict. Everything between them is Traction's.*
