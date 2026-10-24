@@ -2,6 +2,8 @@
 
 **Automatic failure containment for queue consumers.**
 
+**Read the article & docs:** https://dhananjaym-dev.github.io/traction/
+
 When your async work starts failing, Traction stops the right scope (one work type, or a whole
 dependency) instead of burning retries and flooding your alerts. It runs on the RabbitMQ and
 Redis you already have, and the control plane lives inside your own service. No new
