@@ -1,5 +1,5 @@
 site_name: Traction
-site_description: Per-gate, per-charter circuit breaking and a drain-and-resume runbook for RabbitMQ consumers, built on Spring AMQP.
+site_description: Automatic failure containment for queue consumers.
 site_url: https://dhananjaym-dev.github.io/traction/
 repo_url: https://github.com/dhananjaym-dev/traction
 
