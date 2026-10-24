@@ -1,5 +1,6 @@
 ---
 template: essay.html
+title: The retry storm that ate 40,000 messages
 description: An expired token turned a well-built queue consumer into a dead-letter queue full of customer data. Why retries treat every failure as the same size, and what scoped containment looks like instead.
 ---
 
@@ -204,7 +205,8 @@ Then it settles the message, and there are only four ways out:
 - **Park.** Past the hold budget, on a `GATE_FAULT`, or on a stopped gate: the message waits
   for a human. Parked is recoverable, never counted as failed.
 - **Defer.** The airport is down or throttled: the message goes back to the tail of the
-  runway, untouched, and the consumer pauses.
+  runway, untouched. If the airport is down, the consumer pauses until a reopen; if it's
+  throttled, the airport waits out one rate-limit window.
 
 Every settled step is sent as a report to the **control plane**, which runs in one service.
 It reads every report, keeps the streaks, and flips the statuses the data plane obeys. The

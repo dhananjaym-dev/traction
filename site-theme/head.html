@@ -1,6 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{%- set page_title = (page.title ~ ' - ' ~ config.site_name) if page and page.title and not page.is_homepage else config.site_name %}
+{%- if page and page.is_homepage and page.meta and page.meta.title %}{% set page_title = page.meta.title ~ ' · ' ~ config.site_name %}
+{%- elif page and page.title %}{% set page_title = page.title ~ ' - ' ~ config.site_name %}
+{%- else %}{% set page_title = config.site_name %}{% endif %}
 {%- set page_desc = (page.meta.description if page and page.meta and page.meta.description else config.site_description) %}
 <title>{{ page_title | e }}</title>
 <meta name="description" content="{{ page_desc | e }}">
