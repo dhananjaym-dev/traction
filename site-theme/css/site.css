@@ -62,7 +62,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   border-bottom: 1px solid var(--rule);
 }
 .topnav { max-width: 54rem; }
-.essay-header { max-width: 40rem; }
+.essay-header { max-width: 50rem; }
 
 .topnav a, .essay-header a { color: var(--muted); text-decoration: none; }
 .topnav a:hover, .essay-header a:hover { color: var(--fg); text-decoration: underline; }
@@ -96,8 +96,8 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   padding: 1.5rem 1rem 3rem;
 }
 /* ~70ch measure for prose; code, tables and diagrams may run wider */
-.content > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr) { max-width: 44rem; }
-.essay-body { max-width: 40rem; padding-top: 2.5rem; }
+.content > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr) { max-width: 48rem; }
+.essay-body { max-width: 50rem; padding-top: 2.5rem; }
 
 h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.01em; margin: 2.2em 0 0.6em; }
 h1 { font-size: 2rem; margin-top: 0.4em; }
